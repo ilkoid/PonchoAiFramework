@@ -1,0 +1,248 @@
+# Product Vision
+
+## Why PonchoFramework Exists
+
+PonchoFramework is a custom AI framework designed to replace Firebase GenKit in the Poncho Tools ecosystem, specialized for the fashion industry and Russian marketplace integration.
+
+### Core Problem Being Solved
+
+**Business Problem:**
+Fashion businesses selling on Wildberries marketplace need to:
+- Process thousands of fashion articles with technical specifications
+- Analyze fashion sketches and product images using AI vision models
+- Generate product descriptions optimized for Russian e-commerce
+- Classify products into marketplace categories automatically
+- Maintain high quality and accuracy for commercial use
+
+**Technical Problem:**
+Firebase GenKit limitations:
+- Limited customization for fashion-specific use cases
+- Poor Russian language support
+- No specialized vision analysis for fashion items
+- Difficult to extend and optimize for specific workflows
+- Performance bottlenecks
+- Lack of control over AI model selection and configuration
+
+### Solution: PonchoFramework
+
+A custom AI framework that provides:
+1. **Full Control**: Complete ownership of AI stack without external framework dependencies
+2. **Fashion Specialization**: Built-in support for fashion industry workflows
+3. **Russian Market Focus**: Native support for Russian language and Wildberries API
+4. **Vision Excellence**: Advanced fashion image analysis using GLM-4.6V models
+5. **Performance**: 30% faster than GenKit with optimized resource usage
+6. **Flexibility**: Easy integration of new AI models and tools
+
+## How It Should Work
+
+### User Experience Goals
+
+**For Developers:**
+- Simple, intuitive API similar to GenKit but more powerful
+- Easy to register new models, tools, and flows
+- Clear error messages and debugging information
+- Excellent documentation with code examples
+- Hot-reload configuration without restarts
+
+**For Business Users:**
+- Reliable article processing with high accuracy
+- Fast response times (< 2 seconds for most operations)
+- Consistent quality in generated descriptions
+- Accurate categorization and characteristic extraction
+- Cost-effective operation
+
+### Core Workflows
+
+#### 1. Article Processing Workflow
+```
+1. Import article data from S3 (JSON + images)
+2. Analyze images with GLM-4.6V vision model
+3. Extract fashion characteristics (material, style, season)
+4. Match with Wildberries categories
+5. Generate SEO-optimized product description
+6. Validate characteristics against marketplace requirements
+7. Store results for publishing
+```
+
+#### 2. Developer Experience Workflow
+```go
+// Initialize framework
+framework := poncho.NewPonchoFramework(config)
+framework.Start(ctx)
+
+// Simple generation API
+response, err := framework.Generate(ctx, &poncho.PonchoModelRequest{
+    Model: "glm-vision",
+    Messages: []*poncho.PonchoMessage{
+        {
+            Role: poncho.PonchoRoleUser,
+            Content: []*poncho.PonchoContentPart{
+                {Type: poncho.PonchoContentTypeMedia, Media: image},
+                {Type: poncho.PonchoContentTypeText, Text: "Analyze this fashion item"},
+            },
+        },
+    },
+})
+
+// Execute tools
+result, err := framework.ExecuteTool(ctx, "articleImporter", params)
+
+// Run workflows
+output, err := framework.ExecuteFlow(ctx, "articleProcessor", input)
+```
+
+#### 3. Configuration-Driven Setup
+```yaml
+models:
+  glm-vision:
+    provider: "zai"
+    model_name: "glm-4.6v"
+    supports:
+      vision: true
+      tools: true
+      stream: true
+
+tools:
+  article_importer:
+    enabled: true
+    timeout: 30s
+    retry:
+      max_attempts: 3
+      backoff: "exponential"
+
+flows:
+  article_processor:
+    enabled: true
+    dependencies:
+      - "article_importer"
+      - "glm-vision"
+```
+
+## Success Criteria
+
+### Functional Success
+- ✅ Complete replacement of GenKit functionality
+- ✅ All existing tools and flows migrated successfully
+- ✅ Support for DeepSeek and Z.AI (GLM) models
+- ✅ Vision analysis working for fashion images
+- ✅ Wildberries API integration working
+- ✅ S3 data import working seamlessly
+
+### Performance Success
+- Response time < 2 seconds (95th percentile)
+- Throughput > 100 requests/second
+- 30% faster than GenKit baseline
+- Memory usage < 512MB per instance
+- 99.9% uptime in production
+
+### Quality Success
+- Test coverage > 90%
+- Zero critical bugs in production
+- Accurate fashion classification (> 95%)
+- High-quality Russian descriptions
+- Developer satisfaction score > 4.5/5
+
+### Business Success
+- 20% reduction in infrastructure costs
+- 50% faster development of new features
+- Zero migration-related incidents
+- Full migration completed within 3 months
+- Positive feedback from business users
+
+## Target Users
+
+**Primary Users:**
+1. **AI Engineers** - Building and maintaining AI workflows
+2. **Backend Developers** - Integrating AI capabilities into applications
+3. **Data Engineers** - Processing large volumes of fashion data
+
+**Secondary Users:**
+1. **Product Managers** - Monitoring AI performance and accuracy
+2. **Business Analysts** - Analyzing AI-generated content quality
+3. **DevOps Engineers** - Deploying and monitoring the framework
+
+## Key Features
+
+### Phase 1 Features (Foundation)
+- Core framework with model/tool/flow interfaces
+- Configuration management with YAML/JSON support
+- Basic logging and error handling
+- DeepSeek model integration
+- Z.AI (GLM) model integration with vision support
+
+### Phase 2 Features (Migration)
+- All existing tools migrated (S3, Wildberries)
+- All existing flows migrated (article importer, mini-agent)
+- Prompt management system
+- GenKit compatibility layer
+
+### Phase 3 Features (Enhancement)
+- Advanced streaming with progress indicators
+- Multi-level caching (memory + Redis)
+- Comprehensive metrics and monitoring
+- Performance optimization
+- Production hardening
+
+### Phase 4 Features (Future)
+- Additional AI model providers
+- Advanced flow orchestration (parallel execution)
+- Machine learning for category prediction
+- A/B testing framework for prompts
+- Real-time analytics dashboard
+
+## Competitive Advantages
+
+### vs Firebase GenKit
+- **Full Customization**: No vendor lock-in
+- **Fashion Specialization**: Built for fashion industry
+- **Better Performance**: 30% faster execution
+- **Russian Support**: Native Russian language handling
+- **Cost Control**: Better resource utilization
+
+### vs Building from Scratch
+- **Proven Architecture**: Based on GenKit concepts
+- **Faster Development**: Reusable components
+- **Best Practices**: Built-in error handling, monitoring
+- **Community**: Internal knowledge sharing
+
+## Long-Term Vision
+
+**Year 1: Foundation & Migration**
+- Complete GenKit migration
+- Stable production deployment
+- Team adoption and training
+
+**Year 2: Enhancement & Scale**
+- Support for additional AI providers
+- Advanced analytics and insights
+- Multi-region deployment
+- API for external partners
+
+**Year 3: Platform & Innovation**
+- Self-service AI workflow builder
+- Marketplace for custom tools
+- Industry-specific AI models
+- White-label solution for partners
+
+## Metrics to Track
+
+**Technical Metrics:**
+- Request latency (p50, p95, p99)
+- Error rate by type
+- Model usage and costs
+- Cache hit rates
+- System resource utilization
+
+**Business Metrics:**
+- Articles processed per day
+- Description quality scores
+- Category classification accuracy
+- Cost per article processed
+- Developer productivity
+
+**User Experience Metrics:**
+- API response times
+- Error recovery success rate
+- Developer satisfaction surveys
+- Feature adoption rates
+- Support ticket volume

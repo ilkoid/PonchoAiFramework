@@ -1,0 +1,32 @@
+# Poncho Tools Configuration
+# Файл конфигурации для оптимизации изображений и других параметров
+
+# Оптимизация изображений
+image_optimization:
+  enabled: true
+  max_width: 640        # Максимальная ширина в пикселях
+  max_height: 480       # Максимальная высота в пикселях  
+  quality: 90           # Качество JPEG (1-100)
+  max_size_bytes: 90000  # Максимальный размер файла в байтах (90KB)
+
+# S3 конфигурация (основные параметры)
+s3:
+  url: "https://storage.yandexcloud.net"
+  region: "ru-central1"
+  bucket: "plm-ai"
+  endpoint: "storage.yandexcloud.net"
+  use_ssl: true
+
+# Wildberries API конфигурация
+wildberries:
+  base_url: "https://content-api.wildberries.ru"
+  timeout: 30
+
+# Логирование
+logger:
+  level: "info"         # debug, info, warn, error
+  format: "text"        # text, json
+  file: ""              # пустой = stdout
+
+# Примечание: API ключи загружаются из переменных окружения:
+# DEEPSEEK_API_KEY, ZAI_API_KEY, S3_ACCESS_KEY, S3_SECRET_KEY, WB_API_CONTENT_KEY
