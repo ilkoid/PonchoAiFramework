@@ -1,14 +1,17 @@
 package deepseek
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/ilkoid/PonchoAiFramework/core/base"
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
+	"github.com/ilkoid/PonchoAiFramework/models/common"
 )
 
 // DeepSeekModel represents a DeepSeek model implementation
@@ -19,258 +22,289 @@ type DeepSeekModel struct {
 
 // NewDeepSeekModel creates a new DeepSeek model instance
 func NewDeepSeekModel() *DeepSeekModel {
-	capabilities := interfaces.ModelCapabilities{
+	baseModel := base.NewPonchoBaseModel("deepseek-chat", string(common.ProviderDeepSeek), interfaces.ModelCapabilities{
 		Streaming: true,
 		Tools:     true,
-		Vision:    false, // DeepSeek doesn't support vision
+		Vision:    false,
 		System:    true,
-	}
-
-	baseModel := base.NewPonchoBaseModel("deepseek-chat", "deepseek", capabilities)
+	})
 
 	return &DeepSeekModel{
 		PonchoBaseModel: baseModel,
-		client:          nil, // Will be initialized in Initialize
 	}
 }
 
-// Initialize initializes the DeepSeek model with configuration
+// Initialize initializes DeepSeek model with configuration
 func (m *DeepSeekModel) Initialize(ctx context.Context, config map[string]interface{}) error {
-	// Initialize base model first
+	// Convert config to CommonModelConfig
+	commonConfig, err := m.convertConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to convert config: %w", err)
+	}
+
+	// Create DeepSeek client
+	client, err := NewDeepSeekClient(commonConfig, m.GetLogger())
+	if err != nil {
+		return fmt.Errorf("failed to create DeepSeek client: %w", err)
+	}
+
+	m.client = client
+
+	// Initialize base model
 	if err := m.PonchoBaseModel.Initialize(ctx, config); err != nil {
 		return fmt.Errorf("failed to initialize base model: %w", err)
 	}
 
-	// Extract DeepSeek-specific configuration
-	deepseekConfig, err := m.extractConfig(config)
-	if err != nil {
-		return fmt.Errorf("failed to extract DeepSeek config: %w", err)
-	}
-
-	// Create DeepSeek client
-	m.client = NewDeepSeekClient(deepseekConfig, m.GetLogger())
-
 	m.GetLogger().Info("DeepSeek model initialized",
-		"model", deepseekConfig.Model,
-		"base_url", deepseekConfig.BaseURL,
-		"max_tokens", deepseekConfig.MaxTokens,
-		"temperature", deepseekConfig.Temperature)
+		"name", m.Name(),
+		"model", commonConfig.Model,
+		"max_tokens", commonConfig.MaxTokens,
+		"temperature", commonConfig.Temperature)
 
 	return nil
 }
 
 // Generate generates a response using DeepSeek API
 func (m *DeepSeekModel) Generate(ctx context.Context, req *interfaces.PonchoModelRequest) (*interfaces.PonchoModelResponse, error) {
+	if !m.isInitialized() {
+		return nil, fmt.Errorf("model '%s' is not initialized", m.Name())
+	}
+
 	// Validate request
 	if err := m.ValidateRequest(req); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	// Convert Poncho request to DeepSeek request
+	// Validate DeepSeek-specific requirements
+	if err := m.client.ValidateRequest(req); err != nil {
+		return nil, fmt.Errorf("request validation failed: %w", err)
+	}
+
+	// Log request
+	requestID := m.generateRequestID()
+	startTime := time.Now()
+	metrics := m.client.PrepareRequestMetrics(requestID, startTime)
+	m.client.LogRequest(req, requestID)
+
+	// Convert to DeepSeek request format
 	deepseekReq, err := m.convertRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert request: %w", err)
 	}
 
-	// Call DeepSeek API
-	deepseekResp, err := m.client.CreateChatCompletion(ctx, deepseekReq)
+	// Make API call
+	deepseekResp, err := m.createChatCompletion(ctx, deepseekReq)
+	duration := time.Since(startTime)
+
 	if err != nil {
+		metrics.Success = false
+		metrics.Error = &common.ErrorInfo{
+			Code:      common.ErrCodeUnknown,
+			Type:      "api_error",
+			Message:   err.Error(),
+			Provider:  common.ProviderDeepSeek,
+			Retryable: true,
+			Timestamp: time.Now(),
+			RequestID: requestID,
+		}
+		m.client.LogError(err, requestID, duration)
 		return nil, fmt.Errorf("DeepSeek API call failed: %w", err)
 	}
 
-	// Convert DeepSeek response to Poncho response
-	ponchoResp, err := m.convertResponse(deepseekResp)
+	// Convert response
+	resp, err := m.convertResponse(deepseekResp)
 	if err != nil {
+		metrics.Success = false
+		metrics.Error = &common.ErrorInfo{
+			Code:      common.ErrCodeParsingError,
+			Type:      "response_conversion",
+			Message:   err.Error(),
+			Provider:  common.ProviderDeepSeek,
+			Retryable: false,
+			Timestamp: time.Now(),
+			RequestID: requestID,
+		}
+		m.client.LogError(err, requestID, duration)
 		return nil, fmt.Errorf("failed to convert response: %w", err)
 	}
 
-	m.GetLogger().Debug("Generated response",
-		"model", deepseekResp.Model,
-		"finish_reason", deepseekResp.Choices[0].FinishReason,
-		"prompt_tokens", deepseekResp.Usage.PromptTokens,
-		"completion_tokens", deepseekResp.Usage.CompletionTokens)
+	// Update metrics
+	metrics.Success = true
+	metrics.EndTime = time.Now()
+	metrics.Duration = duration
+	if resp.Usage != nil {
+		metrics.TokenUsage = common.TokenUsage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+		}
+	}
+	m.client.LogResponse(resp, requestID, duration)
 
-	return ponchoResp, nil
+	m.GetLogger().Debug("DeepSeek generation completed",
+		"request_id", requestID,
+		"duration_ms", duration.Milliseconds(),
+		"prompt_tokens", resp.Usage.PromptTokens,
+		"completion_tokens", resp.Usage.CompletionTokens)
+
+	return resp, nil
 }
 
 // GenerateStreaming generates a streaming response using DeepSeek API
 func (m *DeepSeekModel) GenerateStreaming(ctx context.Context, req *interfaces.PonchoModelRequest, callback interfaces.PonchoStreamCallback) error {
+	if !m.isInitialized() {
+		return fmt.Errorf("model '%s' is not initialized", m.Name())
+	}
+
+	if !m.SupportsStreaming() {
+		return fmt.Errorf("model '%s' does not support streaming", m.Name())
+	}
+
 	// Validate request
 	if err := m.ValidateRequest(req); err != nil {
 		return fmt.Errorf("invalid request: %w", err)
 	}
 
-	// Check if streaming is supported
-	if !m.SupportsStreaming() {
-		return fmt.Errorf("model '%s' does not support streaming", m.Name())
+	// Validate DeepSeek-specific requirements
+	if err := m.client.ValidateRequest(req); err != nil {
+		return fmt.Errorf("request validation failed: %w", err)
 	}
 
-	// Convert Poncho request to DeepSeek request
+	// Log request
+	requestID := m.generateRequestID()
+	startTime := time.Now()
+	metrics := m.client.PrepareRequestMetrics(requestID, startTime)
+	m.client.LogRequest(req, requestID)
+
+	// Convert to DeepSeek request format
 	deepseekReq, err := m.convertRequest(req)
 	if err != nil {
 		return fmt.Errorf("failed to convert request: %w", err)
 	}
 
-	// Call DeepSeek streaming API
-	return m.client.CreateChatCompletionStream(ctx, deepseekReq, func(streamResp *DeepSeekStreamResponse) error {
-		// Convert streaming response to Poncho format
+	// Make streaming API call
+	err = m.createChatCompletionStream(ctx, deepseekReq, func(streamResp *DeepSeekStreamResponse) error {
+		// Convert stream chunk
 		chunk, err := m.convertStreamChunk(streamResp)
 		if err != nil {
-			return fmt.Errorf("failed to convert stream chunk: %w", err)
+			m.GetLogger().Error("Failed to convert stream chunk",
+				"request_id", requestID,
+				"error", err.Error())
+			return err
 		}
 
-		// Call the callback
-		return callback(chunk)
+		// Call callback
+		if err := callback(chunk); err != nil {
+			m.GetLogger().Error("Stream callback error",
+				"request_id", requestID,
+				"error", err.Error())
+			return err
+		}
+
+		return nil
 	})
-}
 
-// Shutdown shuts down the DeepSeek model and cleans up resources
-func (m *DeepSeekModel) Shutdown(ctx context.Context) error {
-	// Close client if it exists
-	if m.client != nil {
-		if err := m.client.Close(); err != nil {
-			m.GetLogger().Warn("Failed to close DeepSeek client", "error", err)
+	duration := time.Since(startTime)
+
+	if err != nil {
+		metrics.Success = false
+		metrics.Error = &common.ErrorInfo{
+			Code:      common.ErrCodeUnknown,
+			Type:      "stream_error",
+			Message:   err.Error(),
+			Provider:  common.ProviderDeepSeek,
+			Retryable: true,
+			Timestamp: time.Now(),
+			RequestID: requestID,
 		}
-		m.client = nil
+		m.client.LogError(err, requestID, duration)
+		return fmt.Errorf("DeepSeek streaming API call failed: %w", err)
 	}
 
-	// Shutdown base model
+	// Update metrics
+	metrics.Success = true
+	metrics.EndTime = time.Now()
+	metrics.Duration = duration
+	m.client.LogResponse(nil, requestID, duration) // No final response for streaming
+
+	m.GetLogger().Debug("DeepSeek streaming generation completed",
+		"request_id", requestID,
+		"duration_ms", duration.Milliseconds())
+
+	return nil
+}
+
+// Shutdown shuts down DeepSeek model
+func (m *DeepSeekModel) Shutdown(ctx context.Context) error {
+	if m.client != nil {
+		if err := m.client.Close(); err != nil {
+			m.GetLogger().Error("Failed to close DeepSeek client", "error", err.Error())
+			return fmt.Errorf("failed to close DeepSeek client: %w", err)
+		}
+	}
+
 	return m.PonchoBaseModel.Shutdown(ctx)
 }
 
-// extractConfig extracts DeepSeek configuration from generic config map
-func (m *DeepSeekModel) extractConfig(config map[string]interface{}) (*DeepSeekConfig, error) {
-	deepseekConfig := &DeepSeekConfig{
-		BaseURL:     DeepSeekDefaultBaseURL,
-		Model:       DeepSeekDefaultModel,
-		MaxTokens:   m.MaxTokens(),
-		Temperature: m.DefaultTemperature(),
+// Helper methods
+
+// convertConfig converts generic config to CommonModelConfig
+func (m *DeepSeekModel) convertConfig(config map[string]interface{}) (*common.CommonModelConfig, error) {
+	commonConfig := &common.CommonModelConfig{
+		Provider:    common.ProviderDeepSeek,
+		Model:       common.DeepSeekDefaultModel,
+		MaxTokens:   4000,
+		Temperature: 0.7,
 		Timeout:     30 * time.Second,
 	}
 
-	// Extract API key (required)
-	if apiKey, ok := config["api_key"].(string); ok && apiKey != "" {
-		deepseekConfig.APIKey = apiKey
-	} else {
-		return nil, fmt.Errorf("api_key is required for DeepSeek model")
+	// Extract configuration values
+	if apiKey, ok := config["api_key"].(string); ok {
+		commonConfig.APIKey = apiKey
 	}
 
-	// Extract optional fields
-	if baseURL, ok := config["base_url"].(string); ok && baseURL != "" {
-		deepseekConfig.BaseURL = baseURL
+	if model, ok := config["model_name"].(string); ok {
+		commonConfig.Model = model
 	}
 
-	if modelName, ok := config["model_name"].(string); ok && modelName != "" {
-		deepseekConfig.Model = modelName
+	if maxTokens, ok := config["max_tokens"].(int); ok {
+		commonConfig.MaxTokens = maxTokens
 	}
 
-	if maxTokens, ok := config["max_tokens"].(int); ok && maxTokens > 0 {
-		deepseekConfig.MaxTokens = maxTokens
+	if temperature, ok := config["temperature"].(float64); ok {
+		commonConfig.Temperature = float32(temperature)
 	}
 
 	if temperature, ok := config["temperature"].(float32); ok {
-		deepseekConfig.Temperature = temperature
-	} else if temperature, ok := config["temperature"].(float64); ok {
-		deepseekConfig.Temperature = float32(temperature)
+		commonConfig.Temperature = temperature
 	}
 
-	if timeoutStr, ok := config["timeout"].(string); ok && timeoutStr != "" {
-		if timeout, err := time.ParseDuration(timeoutStr); err == nil {
-			deepseekConfig.Timeout = timeout
-		}
+	if baseURL, ok := config["base_url"].(string); ok {
+		commonConfig.BaseURL = baseURL
 	}
 
-	// Extract custom parameters
-	if customParams, ok := config["custom_params"].(map[string]interface{}); ok {
-		if topP, ok := customParams["top_p"].(float32); ok {
-			deepseekConfig.TopP = &topP
-		} else if topP, ok := customParams["top_p"].(float64); ok {
-			tp := float32(topP)
-			deepseekConfig.TopP = &tp
-		}
-
-		if freqPenalty, ok := customParams["frequency_penalty"].(float32); ok {
-			deepseekConfig.FrequencyPenalty = &freqPenalty
-		} else if freqPenalty, ok := customParams["frequency_penalty"].(float64); ok {
-			fp := float32(freqPenalty)
-			deepseekConfig.FrequencyPenalty = &fp
-		}
-
-		if presPenalty, ok := customParams["presence_penalty"].(float32); ok {
-			deepseekConfig.PresencePenalty = &presPenalty
-		} else if presPenalty, ok := customParams["presence_penalty"].(float64); ok {
-			pp := float32(presPenalty)
-			deepseekConfig.PresencePenalty = &pp
-		}
-
-		if stop, ok := customParams["stop"]; ok {
-			deepseekConfig.Stop = stop
-		}
-
-		// Response format
-		if respFormat, ok := customParams["response_format"].(map[string]interface{}); ok {
-			if formatType, ok := respFormat["type"].(string); ok {
-				deepseekConfig.ResponseFormat = &DeepSeekResponseFormat{
-					Type: formatType,
-				}
-			}
-		}
-
-		// Thinking mode
-		if thinking, ok := customParams["thinking"].(map[string]interface{}); ok {
-			if thinkingType, ok := thinking["type"].(string); ok {
-				deepseekConfig.Thinking = &DeepSeekThinking{
-					Type: thinkingType,
-				}
-			}
-		}
-
-		if logProbs, ok := customParams["logprobs"].(bool); ok {
-			deepseekConfig.LogProbs = logProbs
-		}
-
-		if topLogProbs, ok := customParams["top_logprobs"].(int); ok {
-			deepseekConfig.TopLogProbs = &topLogProbs
-		}
+	// Validate required fields
+	if commonConfig.APIKey == "" {
+		return nil, fmt.Errorf("api_key is required")
 	}
 
-	return deepseekConfig, nil
+	return commonConfig, nil
 }
 
-// convertRequest converts PonchoModelRequest to DeepSeekRequest
+// convertRequest converts Poncho request to DeepSeek request format
 func (m *DeepSeekModel) convertRequest(req *interfaces.PonchoModelRequest) (*DeepSeekRequest, error) {
-	deepseekReq := m.client.PrepareRequest()
-
-	// Convert messages
-	messages := make([]DeepSeekMessage, len(req.Messages))
-	for i, msg := range req.Messages {
-		deepseekMsg, err := m.convertMessage(msg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert message %d: %w", i, err)
-		}
-		messages[i] = deepseekMsg
+	deepseekReq := &DeepSeekRequest{
+		Model:       m.client.GetConfig().Model,
+		Messages:    make([]DeepSeekMessage, 0),
+		MaxTokens:   req.MaxTokens,
+		Temperature: req.Temperature,
+		Stream:      req.Stream,
 	}
-	deepseekReq.Messages = messages
-
-	// Override request-specific parameters
-	if req.Model != "" {
-		deepseekReq.Model = req.Model
-	}
-
-	if req.Temperature != nil {
-		deepseekReq.Temperature = req.Temperature
-	}
-
-	if req.MaxTokens != nil {
-		deepseekReq.MaxTokens = req.MaxTokens
-	}
-
-	deepseekReq.Stream = req.Stream
 
 	// Convert tools
-	if req.Tools != nil && len(req.Tools) > 0 {
-		tools := make([]DeepSeekTool, len(req.Tools))
-		for i, tool := range req.Tools {
+	if len(req.Tools) > 0 {
+		deepseekReq.Tools = make([]DeepSeekTool, 0)
+		for _, tool := range req.Tools {
 			deepseekTool := DeepSeekTool{
 				Type: "function",
 				Function: DeepSeekToolFunction{
@@ -279,174 +313,291 @@ func (m *DeepSeekModel) convertRequest(req *interfaces.PonchoModelRequest) (*Dee
 					Parameters:  tool.Parameters,
 				},
 			}
-			tools[i] = deepseekTool
+			deepseekReq.Tools = append(deepseekReq.Tools, deepseekTool)
 		}
-		deepseekReq.Tools = tools
-		deepseekReq.ToolChoice = DeepSeekToolChoiceAuto
+	}
+
+	// Convert messages
+	for _, msg := range req.Messages {
+		deepseekMsg := DeepSeekMessage{
+			Role:    string(msg.Role),
+			Content: "",
+		}
+
+		if msg.Name != nil {
+			deepseekMsg.Name = msg.Name
+		}
+
+		// Convert content parts
+		for _, part := range msg.Content {
+			switch part.Type {
+			case interfaces.PonchoContentTypeText:
+				deepseekMsg.Content += part.Text
+			case interfaces.PonchoContentTypeTool:
+				if part.Tool != nil {
+					toolCall := DeepSeekToolCall{
+						ID:   part.Tool.ID,
+						Type: "function",
+						Function: DeepSeekFunctionCall{
+							Name:      part.Tool.Name,
+							Arguments: m.mapToJSONString(part.Tool.Args),
+						},
+					}
+					deepseekMsg.ToolCalls = append(deepseekMsg.ToolCalls, toolCall)
+				}
+			default:
+				return nil, fmt.Errorf("unsupported content type: %s", part.Type)
+			}
+		}
+
+		deepseekReq.Messages = append(deepseekReq.Messages, deepseekMsg)
 	}
 
 	return deepseekReq, nil
 }
 
-// convertMessage converts PonchoMessage to DeepSeekMessage
-func (m *DeepSeekModel) convertMessage(msg *interfaces.PonchoMessage) (DeepSeekMessage, error) {
-	deepseekMsg := DeepSeekMessage{
-		Role: string(msg.Role),
+// convertResponse converts DeepSeek response to Poncho response
+func (m *DeepSeekModel) convertResponse(deepseekResp *DeepSeekResponse) (*interfaces.PonchoModelResponse, error) {
+	if deepseekResp == nil {
+		return nil, fmt.Errorf("response is nil")
 	}
 
-	// Handle message name
-	if msg.Name != nil {
-		deepseekMsg.Name = msg.Name
+	resp := &interfaces.PonchoModelResponse{
+		FinishReason: interfaces.PonchoFinishReasonStop,
+		Metadata:     make(map[string]interface{}),
 	}
-
-	// Convert content parts
-	var contentBuilder strings.Builder
-	var toolCalls []DeepSeekToolCall
-
-	for _, part := range msg.Content {
-		switch part.Type {
-		case interfaces.PonchoContentTypeText:
-			contentBuilder.WriteString(part.Text)
-		case interfaces.PonchoContentTypeTool:
-			if part.Tool != nil {
-				toolCall := DeepSeekToolCall{
-					ID:   part.Tool.ID,
-					Type: "function",
-					Function: DeepSeekFunctionCall{
-						Name:      part.Tool.Name,
-						Arguments: m.mapToJSONString(part.Tool.Args),
-					},
-				}
-				toolCalls = append(toolCalls, toolCall)
-			}
-		case interfaces.PonchoContentTypeMedia:
-			// DeepSeek doesn't support vision, so we skip media content
-			m.GetLogger().Warn("Media content skipped - DeepSeek doesn't support vision")
-		}
-	}
-
-	deepseekMsg.Content = contentBuilder.String()
-	deepseekMsg.ToolCalls = toolCalls
-
-	return deepseekMsg, nil
-}
-
-// convertResponse converts DeepSeekResponse to PonchoModelResponse
-func (m *DeepSeekModel) convertResponse(resp *DeepSeekResponse) (*interfaces.PonchoModelResponse, error) {
-	if len(resp.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	choice := resp.Choices[0]
 
 	// Convert message
-	ponchoMsg, err := m.convertDeepSeekMessage(&choice.Message)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert message: %w", err)
+	if len(deepseekResp.Choices) > 0 {
+		choice := deepseekResp.Choices[0]
+		resp.Message = &interfaces.PonchoMessage{
+			Role:    interfaces.PonchoRoleAssistant,
+			Content: make([]*interfaces.PonchoContentPart, 0),
+		}
+
+		// Convert content
+		if choice.Message.Content != "" {
+			resp.Message.Content = append(resp.Message.Content, &interfaces.PonchoContentPart{
+				Type: interfaces.PonchoContentTypeText,
+				Text: choice.Message.Content,
+			})
+		}
+
+		// Convert tool calls
+		if len(choice.Message.ToolCalls) > 0 {
+			for _, toolCall := range choice.Message.ToolCalls {
+				args := make(map[string]interface{})
+				if toolCall.Function.Arguments != "" {
+					json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+				}
+
+				resp.Message.Content = append(resp.Message.Content, &interfaces.PonchoContentPart{
+					Type: interfaces.PonchoContentTypeTool,
+					Tool: &interfaces.PonchoToolPart{
+						ID:   toolCall.ID,
+						Name: toolCall.Function.Name,
+						Args: args,
+					},
+				})
+			}
+		}
+
+		// Convert finish reason
+		resp.FinishReason = common.ToPonchoFinishReason(common.FinishReason(choice.FinishReason))
 	}
 
 	// Convert usage
-	usage := &interfaces.PonchoUsage{
-		PromptTokens:     resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens,
-		TotalTokens:      resp.Usage.TotalTokens,
+	resp.Usage = &interfaces.PonchoUsage{
+		PromptTokens:     deepseekResp.Usage.PromptTokens,
+		CompletionTokens: deepseekResp.Usage.CompletionTokens,
+		TotalTokens:      deepseekResp.Usage.TotalTokens,
 	}
 
-	// Convert finish reason
-	finishReason := m.convertFinishReason(choice.FinishReason)
+	return resp, nil
+}
 
-	// Create response
-	ponchoResp := m.PrepareResponse(ponchoMsg, usage, finishReason)
+// convertStreamChunk converts DeepSeek stream response to Poncho stream chunk
+func (m *DeepSeekModel) convertStreamChunk(streamResp *DeepSeekStreamResponse) (*interfaces.PonchoStreamChunk, error) {
+	if streamResp == nil {
+		return nil, fmt.Errorf("stream response is nil")
+	}
+
+	chunk := &interfaces.PonchoStreamChunk{
+		Done:     len(streamResp.Choices) > 0 && streamResp.Choices[0].FinishReason != nil && *streamResp.Choices[0].FinishReason != "",
+		Metadata: make(map[string]interface{}),
+	}
 
 	// Add metadata
-	ponchoResp.Metadata["id"] = resp.ID
-	ponchoResp.Metadata["object"] = resp.Object
-	ponchoResp.Metadata["created"] = resp.Created
-	ponchoResp.Metadata["model"] = resp.Model
-	ponchoResp.Metadata["system_fingerprint"] = resp.SystemFingerprint
+	chunk.Metadata["id"] = streamResp.ID
+	chunk.Metadata["object"] = streamResp.Object
+	chunk.Metadata["created"] = streamResp.Created
+	chunk.Metadata["model"] = streamResp.Model
 
-	return ponchoResp, nil
-}
+	// Convert delta
+	if len(streamResp.Choices) > 0 {
+		choice := streamResp.Choices[0]
 
-// convertDeepSeekMessage converts DeepSeekMessage to PonchoMessage
-func (m *DeepSeekModel) convertDeepSeekMessage(msg *DeepSeekMessage) (*interfaces.PonchoMessage, error) {
-	ponchoMsg := &interfaces.PonchoMessage{
-		Role: interfaces.PonchoRole(msg.Role),
-	}
-
-	// Handle name
-	if msg.Name != nil {
-		ponchoMsg.Name = msg.Name
-	}
-
-	// Convert content and tool calls
-	var contentParts []*interfaces.PonchoContentPart
-
-	// Add text content
-	if msg.Content != "" {
-		contentParts = append(contentParts, &interfaces.PonchoContentPart{
-			Type: interfaces.PonchoContentTypeText,
-			Text: msg.Content,
-		})
-	}
-
-	// Add tool calls
-	for _, toolCall := range msg.ToolCalls {
-		args, err := m.jsonStringToMap(toolCall.Function.Arguments)
-		if err != nil {
-			m.GetLogger().Warn("Failed to parse tool call arguments", "error", err, "arguments", toolCall.Function.Arguments)
-			args = make(map[string]interface{})
+		chunk.Delta = &interfaces.PonchoMessage{
+			Role:    interfaces.PonchoRoleAssistant,
+			Content: make([]*interfaces.PonchoContentPart, 0),
 		}
 
-		contentParts = append(contentParts, &interfaces.PonchoContentPart{
-			Type: interfaces.PonchoContentTypeTool,
-			Tool: &interfaces.PonchoToolPart{
-				ID:   toolCall.ID,
-				Name: toolCall.Function.Name,
-				Args: args,
-			},
-		})
+		// Convert content delta
+		if choice.Delta.Content != "" {
+			chunk.Delta.Content = append(chunk.Delta.Content, &interfaces.PonchoContentPart{
+				Type: interfaces.PonchoContentTypeText,
+				Text: choice.Delta.Content,
+			})
+		}
+
+		// Convert tool call deltas
+		if len(choice.Delta.ToolCalls) > 0 {
+			for _, toolCall := range choice.Delta.ToolCalls {
+				args := make(map[string]interface{})
+				if toolCall.Function.Arguments != "" {
+					json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+				}
+
+				chunk.Delta.Content = append(chunk.Delta.Content, &interfaces.PonchoContentPart{
+					Type: interfaces.PonchoContentTypeTool,
+					Tool: &interfaces.PonchoToolPart{
+						ID:   toolCall.ID,
+						Name: toolCall.Function.Name,
+						Args: args,
+					},
+				})
+			}
+		}
+
+		// Convert finish reason
+		if choice.FinishReason != nil {
+			chunk.FinishReason = common.ToPonchoFinishReason(common.FinishReason(*choice.FinishReason))
+		}
 	}
 
-	ponchoMsg.Content = contentParts
-	return ponchoMsg, nil
-}
-
-// convertFinishReason converts DeepSeek finish reason to PonchoFinishReason
-func (m *DeepSeekModel) convertFinishReason(reason string) interfaces.PonchoFinishReason {
-	switch reason {
-	case DeepSeekFinishReasonStop:
-		return interfaces.PonchoFinishReasonStop
-	case DeepSeekFinishReasonLength:
-		return interfaces.PonchoFinishReasonLength
-	case DeepSeekFinishReasonTool:
-		return interfaces.PonchoFinishReasonTool
-	case DeepSeekFinishReasonError:
-		return interfaces.PonchoFinishReasonError
-	default:
-		return interfaces.PonchoFinishReasonStop
+	// Convert usage
+	if streamResp.Usage != nil {
+		chunk.Usage = &interfaces.PonchoUsage{
+			PromptTokens:     streamResp.Usage.PromptTokens,
+			CompletionTokens: streamResp.Usage.CompletionTokens,
+			TotalTokens:      streamResp.Usage.TotalTokens,
+		}
 	}
+
+	return chunk, nil
 }
 
-// Helper methods for JSON conversion
-func (m *DeepSeekModel) mapToJSONString(data map[string]interface{}) string {
-	if len(data) == 0 {
+// generateRequestID generates a unique request ID
+func (m *DeepSeekModel) generateRequestID() string {
+	return fmt.Sprintf("deepseek_%d", time.Now().UnixNano())
+}
+
+// isInitialized checks if model is properly initialized
+func (m *DeepSeekModel) isInitialized() bool {
+	return m.client != nil
+}
+
+// mapToJSONString converts map to JSON string
+func (m *DeepSeekModel) mapToJSONString(args map[string]interface{}) string {
+	if args == nil {
 		return "{}"
 	}
-
-	// Simple JSON marshaling - in production, you might want better error handling
-	if bytes, err := json.Marshal(data); err == nil {
-		return string(bytes)
-	}
-	return "{}"
+	data, _ := json.Marshal(args)
+	return string(data)
 }
 
-func (m *DeepSeekModel) jsonStringToMap(jsonStr string) (map[string]interface{}, error) {
-	if jsonStr == "" || jsonStr == "{}" {
-		return make(map[string]interface{}), nil
+// createChatCompletion makes a non-streaming chat completion API call
+func (m *DeepSeekModel) createChatCompletion(ctx context.Context, req *DeepSeekRequest) (*DeepSeekResponse, error) {
+	// Build URL
+	url := m.client.BuildURL(common.DeepSeekEndpoint)
+
+	// Prepare headers
+	headers := m.client.PrepareHeaders()
+
+	// Create request body
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, common.WrapError(err, common.ErrCodeParsingError, "Failed to marshal request", string(common.ProviderDeepSeek), req.Model)
 	}
 
-	var result map[string]interface{}
-	err := json.Unmarshal([]byte(jsonStr), &result)
-	return result, err
+	// Create HTTP request
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, common.WrapError(err, common.ErrorCodeNetworkError, "Failed to create request", string(common.ProviderDeepSeek), req.Model)
+	}
+
+	// Set headers
+	for key, value := range headers {
+		httpReq.Header.Set(key, value)
+	}
+
+	// Make API call
+	resp, err := m.client.httpClient.Do(ctx, httpReq)
+	if err != nil {
+		return nil, common.WrapError(err, common.ErrorCodeNetworkError, "Failed to make API request", string(common.ProviderDeepSeek), req.Model)
+	}
+	defer resp.Body.Close()
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		return nil, common.ErrorFromHTTPStatus(resp.StatusCode, string(common.ProviderDeepSeek), req.Model)
+	}
+
+	// Parse response
+	var deepseekResp DeepSeekResponse
+	if err := json.NewDecoder(resp.Body).Decode(&deepseekResp); err != nil {
+		return nil, common.WrapError(err, common.ErrCodeParsingError, "Failed to parse response", string(common.ProviderDeepSeek), req.Model)
+	}
+
+	return &deepseekResp, nil
+}
+
+// createChatCompletionStream makes a streaming chat completion API call
+func (m *DeepSeekModel) createChatCompletionStream(ctx context.Context, req *DeepSeekRequest, callback func(*DeepSeekStreamResponse) error) error {
+	// Set stream flag
+	req.Stream = true
+
+	// Build URL
+	url := m.client.BuildURL(common.DeepSeekEndpoint)
+
+	// Prepare headers
+	headers := m.client.PrepareHeaders()
+	headers["Accept"] = common.MIMETypeEventStream
+
+	// Create request body
+	body, err := json.Marshal(req)
+	if err != nil {
+		return common.WrapError(err, common.ErrCodeParsingError, "Failed to marshal request", string(common.ProviderDeepSeek), req.Model)
+	}
+
+	// Create HTTP request
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return common.WrapError(err, common.ErrorCodeNetworkError, "Failed to create request", string(common.ProviderDeepSeek), req.Model)
+	}
+
+	// Set headers
+	for key, value := range headers {
+		httpReq.Header.Set(key, value)
+	}
+
+	// Make API call
+	resp, err := m.client.httpClient.Do(ctx, httpReq)
+	if err != nil {
+		return common.WrapError(err, common.ErrorCodeNetworkError, "Failed to make streaming request", string(common.ProviderDeepSeek), req.Model)
+	}
+	defer resp.Body.Close()
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		return common.ErrorFromHTTPStatus(resp.StatusCode, string(common.ProviderDeepSeek), req.Model)
+	}
+
+	// Process stream
+	return m.processStream(ctx, resp.Body, callback)
+}
+
+// processStream processes SSE stream from DeepSeek API
+func (m *DeepSeekModel) processStream(ctx context.Context, body io.ReadCloser, callback func(*DeepSeekStreamResponse) error) error {
+	return ProcessSSEStream(ctx, body, callback)
 }

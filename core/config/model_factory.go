@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
@@ -20,9 +21,19 @@ func (f *DeepSeekModelFactory) CreateModel(config *interfaces.ModelConfig) (inte
 		return nil, fmt.Errorf("invalid provider for DeepSeek factory: %s", config.Provider)
 	}
 
-	// TODO: This will be fixed when we move factory registration to avoid circular dependency
-	// For now, return an error to break the cycle
-	return nil, fmt.Errorf("DeepSeek factory temporarily disabled due to circular dependency - this will be fixed in Phase 2")
+	// TODO: Implement actual DeepSeek model creation in Phase 2
+	// For now, return a placeholder to indicate configuration is valid
+	return &PlaceholderModel{
+		name:     config.ModelName,
+		provider: config.Provider,
+		capabilities: &interfaces.ModelCapabilities{
+			Streaming: config.Supports != nil && config.Supports.Streaming,
+			Tools:     config.Supports != nil && config.Supports.Tools,
+			Vision:    config.Supports != nil && config.Supports.Vision,
+			System:    config.Supports != nil && config.Supports.System,
+			JSONMode:  config.Supports != nil && config.Supports.JSONMode,
+		},
+	}, nil
 }
 
 // ValidateConfig validates DeepSeek-specific configuration
@@ -54,13 +65,13 @@ func (f *DeepSeekModelFactory) GetProvider() string {
 // prepareInitConfig prepares initialization configuration for DeepSeek
 func (f *DeepSeekModelFactory) prepareInitConfig(config *interfaces.ModelConfig) map[string]interface{} {
 	initConfig := map[string]interface{}{
-		"provider":      config.Provider,
-		"model_name":    config.ModelName,
-		"api_key":       config.APIKey,
-		"max_tokens":    config.MaxTokens,
-		"temperature":   config.Temperature,
-		"timeout":       config.Timeout,
-		"supports":      config.Supports,
+		"provider":    config.Provider,
+		"model_name":  config.ModelName,
+		"api_key":     config.APIKey,
+		"max_tokens":  config.MaxTokens,
+		"temperature": config.Temperature,
+		"timeout":     config.Timeout,
+		"supports":    config.Supports,
 	}
 
 	// Add base URL if provided
@@ -80,14 +91,14 @@ func (f *DeepSeekModelFactory) prepareInitConfig(config *interfaces.ModelConfig)
 func (f *DeepSeekModelFactory) validateDeepSeekCustomParams(params map[string]interface{}) error {
 	// Validate known DeepSeek parameters
 	validParams := map[string]bool{
-		"top_p":              true,
-		"frequency_penalty":   true,
-		"presence_penalty":    true,
-		"stop":               true,
-		"response_format":     true,
-		"thinking":           true,
-		"logprobs":           true,
-		"top_logprobs":       true,
+		"top_p":             true,
+		"frequency_penalty": true,
+		"presence_penalty":  true,
+		"stop":              true,
+		"response_format":   true,
+		"thinking":          true,
+		"logprobs":          true,
+		"top_logprobs":      true,
 	}
 
 	for param := range params {
@@ -133,7 +144,7 @@ func (f *DeepSeekModelFactory) validateDeepSeekCustomParams(params map[string]in
 // validateTopP validates top_p parameter
 func (f *DeepSeekModelFactory) validateTopP(value interface{}) error {
 	var topP float32
-	
+
 	switch v := value.(type) {
 	case float32:
 		topP = v
@@ -202,9 +213,19 @@ func (f *ZAIModelFactory) CreateModel(config *interfaces.ModelConfig) (interface
 		return nil, fmt.Errorf("invalid provider for Z.AI factory: %s", config.Provider)
 	}
 
-	// TODO: This will be fixed when we move factory registration to avoid circular dependency
-	// For now, return an error to break the cycle
-	return nil, fmt.Errorf("Z.AI factory temporarily disabled due to circular dependency - this will be fixed in Phase 2")
+	// TODO: Implement actual Z.AI model creation in Phase 2
+	// For now, return a placeholder to indicate configuration is valid
+	return &PlaceholderModel{
+		name:     config.ModelName,
+		provider: config.Provider,
+		capabilities: &interfaces.ModelCapabilities{
+			Streaming: config.Supports != nil && config.Supports.Streaming,
+			Tools:     config.Supports != nil && config.Supports.Tools,
+			Vision:    config.Supports != nil && config.Supports.Vision,
+			System:    config.Supports != nil && config.Supports.System,
+			JSONMode:  config.Supports != nil && config.Supports.JSONMode,
+		},
+	}, nil
 }
 
 // ValidateConfig validates Z.AI-specific configuration
@@ -247,13 +268,13 @@ func (f *ZAIModelFactory) GetProvider() string {
 // prepareInitConfig prepares initialization configuration for Z.AI
 func (f *ZAIModelFactory) prepareInitConfig(config *interfaces.ModelConfig) map[string]interface{} {
 	initConfig := map[string]interface{}{
-		"provider":      config.Provider,
-		"model_name":    config.ModelName,
-		"api_key":       config.APIKey,
-		"max_tokens":    config.MaxTokens,
-		"temperature":   config.Temperature,
-		"timeout":       config.Timeout,
-		"supports":      config.Supports,
+		"provider":    config.Provider,
+		"model_name":  config.ModelName,
+		"api_key":     config.APIKey,
+		"max_tokens":  config.MaxTokens,
+		"temperature": config.Temperature,
+		"timeout":     config.Timeout,
+		"supports":    config.Supports,
 	}
 
 	// Add base URL if provided
@@ -273,14 +294,14 @@ func (f *ZAIModelFactory) prepareInitConfig(config *interfaces.ModelConfig) map[
 func (f *ZAIModelFactory) validateZAICustomParams(params map[string]interface{}) error {
 	// Validate known Z.AI parameters
 	validParams := map[string]bool{
-		"top_p":              true,
-		"frequency_penalty":   true,
-		"presence_penalty":    true,
-		"stop":               true,
-		"thinking":           true,
-		"logprobs":           true,
-		"top_logprobs":       true,
-		"max_image_size":     true,
+		"top_p":             true,
+		"frequency_penalty": true,
+		"presence_penalty":  true,
+		"stop":              true,
+		"thinking":          true,
+		"logprobs":          true,
+		"top_logprobs":      true,
+		"max_image_size":    true,
 	}
 
 	for param := range params {
@@ -440,8 +461,19 @@ func (f *OpenAIModelFactory) CreateModel(config *interfaces.ModelConfig) (interf
 		return nil, fmt.Errorf("invalid provider for OpenAI factory: %s", config.Provider)
 	}
 
-	// TODO: Implement OpenAI model when available
-	return nil, fmt.Errorf("OpenAI model factory not yet implemented")
+	// TODO: Implement actual OpenAI model creation when available
+	// For now, return a placeholder to indicate configuration is valid
+	return &PlaceholderModel{
+		name:     config.ModelName,
+		provider: config.Provider,
+		capabilities: &interfaces.ModelCapabilities{
+			Streaming: config.Supports != nil && config.Supports.Streaming,
+			Tools:     config.Supports != nil && config.Supports.Tools,
+			Vision:    config.Supports != nil && config.Supports.Vision,
+			System:    config.Supports != nil && config.Supports.System,
+			JSONMode:  config.Supports != nil && config.Supports.JSONMode,
+		},
+	}, nil
 }
 
 // GetProvider returns the provider this factory supports
@@ -455,8 +487,22 @@ func (f *OpenAIModelFactory) ValidateConfig(config *interfaces.ModelConfig) erro
 		return fmt.Errorf("invalid provider for OpenAI factory: %s", config.Provider)
 	}
 
-	// TODO: Implement OpenAI validation when available
-	return fmt.Errorf("OpenAI model factory not yet implemented")
+	// Basic OpenAI validation
+	if config.Supports != nil && config.Supports.Vision {
+		visionModels := []string{"gpt-4-vision-preview", "gpt-4o", "gpt-4o-mini"}
+		found := false
+		for _, model := range visionModels {
+			if config.ModelName == model {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("model %s does not support vision for OpenAI provider", config.ModelName)
+		}
+	}
+
+	return nil
 }
 
 // ModelFactoryManager manages all model factories
@@ -573,4 +619,84 @@ func (m *ModelFactoryManager) ValidateConfig(config *interfaces.ModelConfig) err
 	}
 
 	return factory.ValidateConfig(config)
+}
+
+// PlaceholderModel is a temporary placeholder for model implementations
+// This will be replaced with actual model implementations in Phase 2
+type PlaceholderModel struct {
+	name         string
+	provider     string
+	capabilities *interfaces.ModelCapabilities
+}
+
+// Name returns the model name
+func (p *PlaceholderModel) Name() string {
+	return p.name
+}
+
+// Provider returns the model provider
+func (p *PlaceholderModel) Provider() string {
+	return p.provider
+}
+
+// MaxTokens returns the maximum tokens supported
+func (p *PlaceholderModel) MaxTokens() int {
+	return 4000 // Default placeholder value
+}
+
+// DefaultTemperature returns the default temperature setting
+func (p *PlaceholderModel) DefaultTemperature() float32 {
+	return 0.7 // Default placeholder value
+}
+
+// Initialize initializes the model (placeholder implementation)
+func (p *PlaceholderModel) Initialize(ctx context.Context, config map[string]interface{}) error {
+	// Placeholder implementation - does nothing
+	return nil
+}
+
+// Shutdown shuts down the model (placeholder implementation)
+func (p *PlaceholderModel) Shutdown(ctx context.Context) error {
+	// Placeholder implementation - does nothing
+	return nil
+}
+
+// Temperature returns the temperature setting (deprecated, use DefaultTemperature)
+func (p *PlaceholderModel) Temperature() float32 {
+	return p.DefaultTemperature()
+}
+
+// SupportsStreaming returns whether the model supports streaming
+func (p *PlaceholderModel) SupportsStreaming() bool {
+	return p.capabilities != nil && p.capabilities.Streaming
+}
+
+// SupportsTools returns whether the model supports tools
+func (p *PlaceholderModel) SupportsTools() bool {
+	return p.capabilities != nil && p.capabilities.Tools
+}
+
+// SupportsVision returns whether the model supports vision
+func (p *PlaceholderModel) SupportsVision() bool {
+	return p.capabilities != nil && p.capabilities.Vision
+}
+
+// SupportsSystemRole returns whether the model supports system role
+func (p *PlaceholderModel) SupportsSystemRole() bool {
+	return p.capabilities != nil && p.capabilities.System
+}
+
+// SupportsJSONMode returns whether the model supports JSON mode
+func (p *PlaceholderModel) SupportsJSONMode() bool {
+	return p.capabilities != nil && p.capabilities.JSONMode
+}
+
+// Generate generates a response (placeholder implementation)
+func (p *PlaceholderModel) Generate(ctx context.Context, req *interfaces.PonchoModelRequest) (*interfaces.PonchoModelResponse, error) {
+	return nil, fmt.Errorf("placeholder model %s does not support generation - implementation pending in Phase 2", p.name)
+}
+
+// GenerateStreaming generates a streaming response (placeholder implementation)
+func (p *PlaceholderModel) GenerateStreaming(ctx context.Context, req *interfaces.PonchoModelRequest, callback interfaces.PonchoStreamCallback) error {
+	return fmt.Errorf("placeholder model %s does not support streaming - implementation pending in Phase 2", p.name)
 }

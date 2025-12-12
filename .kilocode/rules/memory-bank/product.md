@@ -32,6 +32,7 @@ A custom AI framework that provides:
 4. **Vision Excellence**: Advanced fashion image analysis using GLM-4.6V models
 5. **Performance**: 30% faster than GenKit with optimized resource usage
 6. **Flexibility**: Easy integration of new AI models and tools
+7. **Advanced Prompt Management**: Comprehensive template system with V1 legacy support and fashion-specific context
 
 ## How It Should Work
 
@@ -54,69 +55,28 @@ A custom AI framework that provides:
 ### Core Workflows
 
 #### 1. Article Processing Workflow
-```
-1. Import article data from S3 (JSON + images)
-2. Analyze images with GLM-4.6V vision model
-3. Extract fashion characteristics (material, style, season)
-4. Match with Wildberries categories
-5. Generate SEO-optimized product description
-6. Validate characteristics against marketplace requirements
-7. Store results for publishing
-```
+1. Импорт данных из S3 (JSON + изображения)
+2. Анализ изображений через GLM-4.6V vision модель
+3. Извлечение фешн-характеристик (материал, стиль, сезон)
+4. Сопоставление с категориями Wildberries
+5. Генерация SEO-оптимизированного описания
+6. Валидация характеристик для маркетплейса
+7. Сохранение результатов для публикации
 
-#### 2. Developer Experience Workflow
-```go
-// Initialize framework
-framework := poncho.NewPonchoFramework(config)
-framework.Start(ctx)
+#### 2. Developer Experience
+- **Framework initialization**: `poncho.NewPonchoFramework(config)`
+- **Generation API**: `framework.Generate()` для AI запросов
+- **Prompt execution**: `framework.ExecutePrompt()` с переменными
+- **Streaming**: `framework.ExecutePromptStreaming()` для real-time
+- **Tools**: `framework.ExecuteTool()` для инструментов
+- **Flows**: `framework.ExecuteFlow()` для workflow
 
-// Simple generation API
-response, err := framework.Generate(ctx, &poncho.PonchoModelRequest{
-    Model: "glm-vision",
-    Messages: []*poncho.PonchoMessage{
-        {
-            Role: poncho.PonchoRoleUser,
-            Content: []*poncho.PonchoContentPart{
-                {Type: poncho.PonchoContentTypeMedia, Media: image},
-                {Type: poncho.PonchoContentTypeText, Text: "Analyze this fashion item"},
-            },
-        },
-    },
-})
-
-// Execute tools
-result, err := framework.ExecuteTool(ctx, "articleImporter", params)
-
-// Run workflows
-output, err := framework.ExecuteFlow(ctx, "articleProcessor", input)
-```
-
-#### 3. Configuration-Driven Setup
-```yaml
-models:
-  glm-vision:
-    provider: "zai"
-    model_name: "glm-4.6v"
-    supports:
-      vision: true
-      tools: true
-      stream: true
-
-tools:
-  article_importer:
-    enabled: true
-    timeout: 30s
-    retry:
-      max_attempts: 3
-      backoff: "exponential"
-
-flows:
-  article_processor:
-    enabled: true
-    dependencies:
-      - "article_importer"
-      - "glm-vision"
-```
+#### 3. Configuration
+- **Models**: DeepSeek, GLM-4.6V с vision/tools/streaming
+- **Tools**: S3 importer, Wildberries API интеграция
+- **Flows**: Article processor с зависимостями
+- **Prompts**: Template система с кэшированием и валидацией
+- **Fashion context**: Специализированные настройки для фешн-домена
 
 ## Success Criteria
 
@@ -169,11 +129,12 @@ flows:
 - Basic logging and error handling
 - DeepSeek model integration
 - Z.AI (GLM) model integration with vision support
+- ✅ **Advanced Prompt Management**: Template system with V1 legacy support
 
 ### Phase 2 Features (Migration)
 - All existing tools migrated (S3, Wildberries)
 - All existing flows migrated (article importer, mini-agent)
-- Prompt management system
+- ✅ **Prompt management system** - Advanced template processing with V1 legacy support
 - GenKit compatibility layer
 
 ### Phase 3 Features (Enhancement)
@@ -182,6 +143,7 @@ flows:
 - Comprehensive metrics and monitoring
 - Performance optimization
 - Production hardening
+- ✅ **Prompt system integration** - Full integration with model adapters and flows
 
 ### Phase 4 Features (Future)
 - Additional AI model providers
@@ -198,6 +160,7 @@ flows:
 - **Better Performance**: 30% faster execution
 - **Russian Support**: Native Russian language handling
 - **Cost Control**: Better resource utilization
+- **Advanced Prompt System**: Template management with V1 compatibility and fashion context
 
 ### vs Building from Scratch
 - **Proven Architecture**: Based on GenKit concepts

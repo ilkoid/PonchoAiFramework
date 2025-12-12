@@ -1,158 +1,204 @@
 package zai
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
 
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
 )
 
-// StreamConverter handles streaming response conversion
-type StreamConverter struct {
-	logger interfaces.Logger
+// ProcessStreamChunk processes a streaming chunk from Z.AI API
+func ProcessStreamChunk(chunk []byte) (*ZAIStreamResponse, error) {
+	var streamResp ZAIStreamResponse
+	if err := json.Unmarshal(chunk, &streamResp); err != nil {
+		return nil, fmt.Errorf("failed to parse stream chunk: %w", err)
+	}
+	return &streamResp, nil
 }
 
-// NewStreamConverter creates a new stream converter
-func NewStreamConverter(logger interfaces.Logger) *StreamConverter {
-	if logger == nil {
-		logger = interfaces.NewDefaultLogger()
-	}
-	return &StreamConverter{
-		logger: logger,
-	}
-}
-
-// convertStreamChunk converts GLMStreamResponse to PonchoStreamChunk
-func (sc *StreamConverter) ConvertStreamChunk(streamResp *GLMStreamResponse) (*interfaces.PonchoStreamChunk, error) {
-	if len(streamResp.Choices) == 0 {
-		return nil, nil // Skip chunks with no choices
+// ConvertStreamChunkToPoncho converts Z.AI stream chunk to Poncho format
+func ConvertStreamChunkToPoncho(chunk *ZAIStreamResponse) (*interfaces.PonchoStreamChunk, error) {
+	if chunk == nil {
+		return nil, fmt.Errorf("chunk is nil")
 	}
 
-	choice := streamResp.Choices[0]
-
-	// Convert delta message
-	var delta *interfaces.PonchoMessage
-	if choice.Delta.Role != "" || choice.Delta.Content != "" || len(choice.Delta.ToolCalls) > 0 {
-		var err error
-		delta, err = sc.convertStreamDelta(&choice.Delta)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Convert usage (may be nil in most chunks)
-	var usage *interfaces.PonchoUsage
-	if streamResp.Usage != nil {
-		usage = &interfaces.PonchoUsage{
-			PromptTokens:     streamResp.Usage.PromptTokens,
-			CompletionTokens: streamResp.Usage.CompletionTokens,
-			TotalTokens:      streamResp.Usage.TotalTokens,
-		}
-	}
-
-	// Convert finish reason
-	var finishReason interfaces.PonchoFinishReason
-	if choice.FinishReason != nil {
-		finishReason = sc.convertFinishReason(*choice.FinishReason)
-	}
-
-	// Determine if stream is done
-	done := choice.FinishReason != nil && *choice.FinishReason != ""
-
-	// Create stream chunk
-	chunk := &interfaces.PonchoStreamChunk{
-		Delta:        delta,
-		Usage:        usage,
-		FinishReason: finishReason,
-		Done:         done,
-		Metadata:     make(map[string]interface{}),
+	ponchoChunk := &interfaces.PonchoStreamChunk{
+		Done:     false,
+		Metadata: make(map[string]interface{}),
 	}
 
 	// Add metadata
-	chunk.Metadata["id"] = streamResp.ID
-	chunk.Metadata["object"] = streamResp.Object
-	chunk.Metadata["created"] = streamResp.Created
-	chunk.Metadata["model"] = streamResp.Model
+	ponchoChunk.Metadata["id"] = chunk.ID
+	ponchoChunk.Metadata["object"] = chunk.Object
+	ponchoChunk.Metadata["created"] = chunk.Created
+	ponchoChunk.Metadata["model"] = chunk.Model
 
-	return chunk, nil
-}
+	// Convert choices
+	if len(chunk.Choices) > 0 {
+		choice := chunk.Choices[0]
 
-// convertStreamDelta converts GLMStreamDelta to PonchoMessage
-func (sc *StreamConverter) convertStreamDelta(delta *GLMStreamDelta) (*interfaces.PonchoMessage, error) {
-	ponchoMsg := &interfaces.PonchoMessage{}
-
-	// Set role if provided
-	if delta.Role != "" {
-		ponchoMsg.Role = interfaces.PonchoRole(delta.Role)
-	}
-
-	// Convert content and tool calls
-	var contentParts []*interfaces.PonchoContentPart
-
-	// Add text content
-	if delta.Content != "" {
-		contentParts = append(contentParts, &interfaces.PonchoContentPart{
-			Type: interfaces.PonchoContentTypeText,
-			Text: delta.Content,
-		})
-	}
-
-	// Add tool calls
-	for _, toolCall := range delta.ToolCalls {
-		args, err := sc.jsonStringToMap(toolCall.Function.Arguments)
-		if err != nil {
-			sc.logger.Warn("Failed to parse stream tool call arguments", "error", err, "arguments", toolCall.Function.Arguments)
-			args = make(map[string]interface{})
+		ponchoChunk.Delta = &interfaces.PonchoMessage{
+			Role:    interfaces.PonchoRoleAssistant,
+			Content: make([]*interfaces.PonchoContentPart, 0),
 		}
 
-		contentParts = append(contentParts, &interfaces.PonchoContentPart{
-			Type: interfaces.PonchoContentTypeTool,
-			Tool: &interfaces.PonchoToolPart{
-				ID:   toolCall.ID,
-				Name: toolCall.Function.Name,
-				Args: args,
-			},
-		})
+		// Convert content delta
+		if choice.Delta.Content != "" {
+			ponchoChunk.Delta.Content = append(ponchoChunk.Delta.Content, &interfaces.PonchoContentPart{
+				Type: interfaces.PonchoContentTypeText,
+				Text: choice.Delta.Content,
+			})
+		}
+
+		// Convert tool call deltas
+		if len(choice.Delta.ToolCalls) > 0 {
+			for _, toolCall := range choice.Delta.ToolCalls {
+				args := make(map[string]interface{})
+				if toolCall.Function.Arguments != "" {
+					if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+						// If parsing fails, keep as raw string
+						args = map[string]interface{}{
+							"raw_arguments": toolCall.Function.Arguments,
+						}
+					}
+				}
+
+				ponchoChunk.Delta.Content = append(ponchoChunk.Delta.Content, &interfaces.PonchoContentPart{
+					Type: interfaces.PonchoContentTypeTool,
+					Tool: &interfaces.PonchoToolPart{
+						ID:   toolCall.ID,
+						Name: toolCall.Function.Name,
+						Args: args,
+					},
+				})
+			}
+		}
+
+		// Convert finish reason
+		if choice.FinishReason != nil {
+			ponchoChunk.Done = *choice.FinishReason != ""
+			switch *choice.FinishReason {
+			case ZAIFinishReasonStop:
+				ponchoChunk.FinishReason = interfaces.PonchoFinishReasonStop
+			case ZAIFinishReasonLength:
+				ponchoChunk.FinishReason = interfaces.PonchoFinishReasonLength
+			case ZAIFinishReasonTool:
+				ponchoChunk.FinishReason = interfaces.PonchoFinishReasonTool
+			case ZAIFinishReasonError:
+				ponchoChunk.FinishReason = interfaces.PonchoFinishReasonError
+			default:
+				ponchoChunk.FinishReason = interfaces.PonchoFinishReasonStop
+			}
+		}
 	}
 
-	ponchoMsg.Content = contentParts
-	return ponchoMsg, nil
+	// Convert usage
+	if chunk.Usage != nil {
+		ponchoChunk.Usage = &interfaces.PonchoUsage{
+			PromptTokens:     chunk.Usage.PromptTokens,
+			CompletionTokens: chunk.Usage.CompletionTokens,
+			TotalTokens:      chunk.Usage.TotalTokens,
+		}
+	}
+
+	return ponchoChunk, nil
 }
 
-// convertFinishReason converts GLM finish reason to PonchoFinishReason
-func (sc *StreamConverter) convertFinishReason(reason string) interfaces.PonchoFinishReason {
-	switch reason {
-	case GLMFinishReasonStop:
-		return interfaces.PonchoFinishReasonStop
-	case GLMFinishReasonLength:
-		return interfaces.PonchoFinishReasonLength
-	case GLMFinishReasonTool:
-		return interfaces.PonchoFinishReasonTool
-	case GLMFinishReasonError:
-		return interfaces.PonchoFinishReasonError
-	default:
-		return interfaces.PonchoFinishReasonStop
+// IsStreamComplete checks if the stream is complete
+func IsStreamComplete(chunk *ZAIStreamResponse) bool {
+	if chunk == nil || len(chunk.Choices) == 0 {
+		return false
 	}
+
+	return chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != ""
 }
 
-// Helper methods for JSON conversion
-func (sc *StreamConverter) mapToJSONString(data map[string]interface{}) string {
-	if len(data) == 0 {
-		return "{}"
+// GetStreamChunkID returns the ID of a stream chunk
+func GetStreamChunkID(chunk *ZAIStreamResponse) string {
+	if chunk == nil {
+		return ""
 	}
-
-	// Simple JSON marshaling - in production, you might want better error handling
-	if bytes, err := json.Marshal(data); err == nil {
-		return string(bytes)
-	}
-	return "{}"
+	return chunk.ID
 }
 
-func (sc *StreamConverter) jsonStringToMap(jsonStr string) (map[string]interface{}, error) {
-	if jsonStr == "" || jsonStr == "{}" {
-		return make(map[string]interface{}), nil
+// GetStreamChunkModel returns the model of a stream chunk
+func GetStreamChunkModel(chunk *ZAIStreamResponse) string {
+	if chunk == nil {
+		return ""
+	}
+	return chunk.Model
+}
+
+// GetStreamChunkCreated returns the creation time of a stream chunk
+func GetStreamChunkCreated(chunk *ZAIStreamResponse) int64 {
+	if chunk == nil {
+		return 0
+	}
+	return chunk.Created
+}
+
+// ProcessSSEStream processes Server-Sent Events stream for Z.AI API
+func ProcessSSEStream(ctx context.Context, body io.ReadCloser, callback func(*ZAIStreamResponse) error) error {
+	defer body.Close()
+
+	scanner := bufio.NewScanner(body)
+
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		line := scanner.Text()
+
+		// Skip empty lines
+		if line == "" {
+			continue
+		}
+
+		// Skip comments
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+
+		// Remove "data: " prefix
+		if strings.HasPrefix(line, "data: ") {
+			line = line[6:]
+		} else if strings.HasPrefix(line, "data:") {
+			line = line[5:]
+		}
+
+		// Check for [DONE] marker
+		if line == "[DONE]" {
+			return nil
+		}
+
+		// Skip empty data lines
+		if line == "" {
+			continue
+		}
+
+		// Parse JSON
+		var streamResp ZAIStreamResponse
+		if err := json.Unmarshal([]byte(line), &streamResp); err != nil {
+			// Log error but continue processing
+			continue
+		}
+
+		// Call callback
+		if err := callback(&streamResp); err != nil {
+			return err
+		}
 	}
 
-	var result map[string]interface{}
-	err := json.Unmarshal([]byte(jsonStr), &result)
-	return result, err
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("stream processing error: %w", err)
+	}
+
+	return nil
 }

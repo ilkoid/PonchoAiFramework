@@ -1,266 +1,188 @@
 package zai
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
+	"os"
 	"time"
 
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
+	"github.com/ilkoid/PonchoAiFramework/models/common"
 )
 
-// GLMClient represents an HTTP client for Z.AI GLM API
-type GLMClient struct {
-	httpClient *http.Client
-	config     *GLMConfig
-	logger     interfaces.Logger
+// ZAIClient represents a client for Z.AI GLM API
+type ZAIClient struct {
+	httpClient   *common.HTTPClient
+	config       *common.CommonModelConfig
+	logger       interfaces.Logger
+	apiKey       string
+	baseURL      string
+	visionConfig *ZAIVisionConfig
 }
 
-// NewGLMClient creates a new GLM HTTP client
-func NewGLMClient(config *GLMConfig, logger interfaces.Logger) *GLMClient {
+// NewZAIClient creates a new Z.AI client
+func NewZAIClient(config *common.CommonModelConfig, logger interfaces.Logger) (*ZAIClient, error) {
 	if config == nil {
-		config = &GLMConfig{
-			BaseURL:     GLMDefaultBaseURL,
-			Model:       GLMDefaultModel,
-			MaxTokens:   2000,
-			Temperature: 0.5,
-			Timeout:     60 * time.Second,
-		}
+		return nil, fmt.Errorf("config cannot be nil")
 	}
 
 	if logger == nil {
 		logger = interfaces.NewDefaultLogger()
 	}
 
-	// Configure HTTP client with connection pooling and timeouts
-	httpClient := &http.Client{
-		Timeout: config.Timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-			TLSHandshakeTimeout: 10 * time.Second,
-		},
+	// Validate configuration
+	if err := validateConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	return &GLMClient{
-		httpClient: httpClient,
-		config:     config,
-		logger:     logger,
+	// Create HTTP client
+	httpConfig := &common.DefaultHTTPConfig
+	httpConfig.Timeout = config.Timeout
+	httpConfig.UserAgent = "PonchoFramework-ZAI/1.0"
+
+	retryConfig := common.DefaultRetryConfig
+	retryConfig.MaxAttempts = 3
+	retryConfig.BaseDelay = 1 * time.Second
+	retryConfig.MaxDelay = 30 * time.Second
+
+	httpClient, err := common.NewHTTPClient(httpConfig, retryConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
 	}
+
+	// Create vision config
+	visionConfig := &ZAIVisionConfig{
+		MaxImageSize:   ZAIVisionMaxImageSize,
+		SupportedTypes: []string{"image/jpeg", "image/png", "image/gif", "image/webp"},
+		Quality:        ZAIVisionQualityAuto,
+		Detail:         ZAIVisionDetailAuto,
+	}
+
+	client := &ZAIClient{
+		httpClient:   httpClient,
+		config:       config,
+		logger:       logger,
+		apiKey:       config.APIKey,
+		baseURL:      config.BaseURL,
+		visionConfig: visionConfig,
+	}
+
+	// Use default base URL if not provided
+	if client.baseURL == "" {
+		client.baseURL = common.ZAIDefaultBaseURL
+	}
+
+	// Try to get API key from environment if not provided
+	if client.apiKey == "" {
+		client.apiKey = os.Getenv("ZAI_API_KEY")
+		if client.apiKey == "" {
+			return nil, fmt.Errorf("ZAI_API_KEY environment variable is required")
+		}
+	}
+
+	logger.Info("Z.AI client created",
+		"model", config.Model,
+		"base_url", client.baseURL,
+		"timeout", config.Timeout,
+		"vision_enabled", config.ModelType == common.ModelTypeVision || config.ModelType == common.ModelTypeMultimodal)
+
+	return client, nil
 }
 
-// CreateChatCompletion creates a chat completion request
-func (c *GLMClient) CreateChatCompletion(ctx context.Context, req *GLMRequest) (*GLMResponse, error) {
-	// Set default values
-	if req.Model == "" {
-		req.Model = c.config.Model
+// validateConfig validates Z.AI configuration
+func validateConfig(config *common.CommonModelConfig) error {
+	if config.Model == "" {
+		return fmt.Errorf("model name is required")
 	}
 
-	// Validate request
-	if err := c.ValidateRequest(req); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
+	if config.MaxTokens <= 0 {
+		return fmt.Errorf("max_tokens must be positive")
 	}
 
-	// Prepare request
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	if config.Temperature < 0 || config.Temperature > 2 {
+		return fmt.Errorf("temperature must be between 0 and 2")
 	}
 
-	// Create HTTP request
-	url := c.config.BaseURL + GLMEndpoint
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	if config.Timeout <= 0 {
+		return fmt.Errorf("timeout must be positive")
 	}
 
-	// Set headers
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.config.APIKey)
-	httpReq.Header.Set("User-Agent", "PonchoFramework/1.0")
-
-	c.logger.Debug("Sending request to GLM API",
-		"url", url,
-		"model", req.Model,
-		"messages_count", len(req.Messages),
-		"stream", req.Stream,
-		"thinking_enabled", req.Thinking != nil && req.Thinking.Type == GLMThinkingEnabled)
-
-	// Send request
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Check for error status codes
-	if resp.StatusCode != http.StatusOK {
-		var apiErr GLMError
-		if err := json.Unmarshal(body, &apiErr); err != nil {
-			return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
-		}
-		return nil, fmt.Errorf("API error: %s (type: %s, code: %s)",
-			apiErr.Error.Message, apiErr.Error.Type, apiErr.Error.Code)
-	}
-
-	// Parse successful response
-	var response GLMResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	c.logger.Debug("Received response from GLM API",
-		"id", response.ID,
-		"model", response.Model,
-		"choices_count", len(response.Choices),
-		"prompt_tokens", response.Usage.PromptTokens,
-		"completion_tokens", response.Usage.CompletionTokens,
-		"finish_reason", response.Choices[0].FinishReason)
-
-	return &response, nil
-}
-
-// CreateChatCompletionStream creates a streaming chat completion request
-func (c *GLMClient) CreateChatCompletionStream(ctx context.Context, req *GLMRequest, callback func(*GLMStreamResponse) error) error {
-	// Set streaming mode
-	req.Stream = true
-
-	// Set default values
-	if req.Model == "" {
-		req.Model = c.config.Model
-	}
-
-	// Validate request
-	if err := c.ValidateRequest(req); err != nil {
-		return fmt.Errorf("invalid request: %w", err)
-	}
-
-	// Prepare request
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create HTTP request
-	url := c.config.BaseURL + GLMEndpoint
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	// Set headers for streaming
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-	httpReq.Header.Set("Cache-Control", "no-cache")
-	httpReq.Header.Set("Authorization", "Bearer "+c.config.APIKey)
-	httpReq.Header.Set("User-Agent", "PonchoFramework/1.0")
-
-	c.logger.Debug("Sending streaming request to GLM API",
-		"url", url,
-		"model", req.Model,
-		"messages_count", len(req.Messages))
-
-	// Send request
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check for error status codes
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		var apiErr GLMError
-		if err := json.Unmarshal(body, &apiErr); err != nil {
-			return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
-		}
-		return fmt.Errorf("API error: %s (type: %s, code: %s)",
-			apiErr.Error.Message, apiErr.Error.Type, apiErr.Error.Code)
-	}
-
-	// Process streaming response
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Skip empty lines and comments
-		if line == "" || strings.HasPrefix(line, ":") {
-			continue
-		}
-
-		// Remove "data: " prefix
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		data := strings.TrimPrefix(line, "data: ")
-
-		// Check for end of stream
-		if data == "[DONE]" {
-			c.logger.Debug("GLM stream completed")
-			break
-		}
-
-		// Parse JSON chunk
-		var streamResp GLMStreamResponse
-		if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-			c.logger.Warn("Failed to unmarshal GLM stream chunk", "error", err, "data", data)
-			continue
-		}
-
-		// Call callback with chunk
-		if err := callback(&streamResp); err != nil {
-			return fmt.Errorf("callback error: %w", err)
-		}
-	}
-
-	// Check for scanner errors
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("stream reading error: %w", err)
-	}
-
+	// API key can be empty if provided via environment variable
 	return nil
 }
 
-// SetConfig updates client configuration
-func (c *GLMClient) SetConfig(config *GLMConfig) {
-	c.config = config
-
-	// Update HTTP client timeout if needed
-	if config.Timeout > 0 {
-		c.httpClient.Timeout = config.Timeout
+// Close closes Z.AI client and cleans up resources
+func (c *ZAIClient) Close() error {
+	if c.httpClient != nil {
+		return c.httpClient.Close()
 	}
+	return nil
 }
 
-// GetConfig returns current client configuration
-func (c *GLMClient) GetConfig() *GLMConfig {
+// GetConfig returns client configuration
+func (c *ZAIClient) GetConfig() *common.CommonModelConfig {
 	return c.config
 }
 
-// Close closes HTTP client and cleans up resources
-func (c *GLMClient) Close() error {
-	// Close idle connections
-	if transport, ok := c.httpClient.Transport.(*http.Transport); ok {
-		transport.CloseIdleConnections()
+// GetLogger returns client logger
+func (c *ZAIClient) GetLogger() interfaces.Logger {
+	return c.logger
+}
+
+// GetVisionConfig returns vision configuration
+func (c *ZAIClient) GetVisionConfig() *ZAIVisionConfig {
+	return c.visionConfig
+}
+
+// UpdateConfig updates client configuration
+func (c *ZAIClient) UpdateConfig(config *common.CommonModelConfig) error {
+	if err := validateConfig(config); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
 	}
+
+	c.config = config
+	if config.APIKey != "" {
+		c.apiKey = config.APIKey
+	}
+	if config.BaseURL != "" {
+		c.baseURL = config.BaseURL
+	}
+
+	c.logger.Info("Z.AI client configuration updated",
+		"model", config.Model,
+		"base_url", c.baseURL)
+
 	return nil
 }
 
-// ValidateRequest validates a GLM request before sending
-func (c *GLMClient) ValidateRequest(req *GLMRequest) error {
+// UpdateVisionConfig updates vision configuration
+func (c *ZAIClient) UpdateVisionConfig(config *ZAIVisionConfig) {
+	if config != nil {
+		c.visionConfig = config
+		c.logger.Info("Z.AI vision configuration updated",
+			"max_image_size", config.MaxImageSize,
+			"quality", config.Quality,
+			"detail", config.Detail)
+	}
+}
+
+// PrepareHeaders prepares HTTP headers for Z.AI API requests
+func (c *ZAIClient) PrepareHeaders() map[string]string {
+	headers := make(map[string]string)
+	headers["Content-Type"] = common.MIMETypeJSON
+	headers["Accept"] = common.MIMETypeJSON
+	headers["Authorization"] = "Bearer " + c.apiKey
+	headers["User-Agent"] = "PonchoFramework-ZAI/1.0"
+	return headers
+}
+
+// BuildURL builds full URL for API endpoints
+func (c *ZAIClient) BuildURL(endpoint string) string {
+	return c.baseURL + endpoint
+}
+
+// ValidateRequest validates a request before sending to Z.AI API
+func (c *ZAIClient) ValidateRequest(req *interfaces.PonchoModelRequest) error {
 	if req == nil {
 		return fmt.Errorf("request cannot be nil")
 	}
@@ -269,105 +191,176 @@ func (c *GLMClient) ValidateRequest(req *GLMRequest) error {
 		return fmt.Errorf("request must contain at least one message")
 	}
 
-	// Validate messages
+	// Validate max_tokens
+	if req.MaxTokens != nil && *req.MaxTokens > c.config.MaxTokens {
+		return fmt.Errorf("max_tokens (%d) exceeds model maximum (%d)", *req.MaxTokens, c.config.MaxTokens)
+	}
+
+	// Validate media content for vision models
+	isVisionModel := c.config.ModelType == common.ModelTypeVision || c.config.ModelType == common.ModelTypeMultimodal
+	hasMedia := false
+
 	for i, msg := range req.Messages {
-		if msg.Role == "" {
-			return fmt.Errorf("message %d must have a role", i)
-		}
+		for j, part := range msg.Content {
+			if part.Type == interfaces.PonchoContentTypeMedia {
+				hasMedia = true
+				if !isVisionModel {
+					return fmt.Errorf("media content not supported for non-vision model (message %d, part %d)", i, j)
+				}
 
-		// Validate content based on type
-		if msg.Content == nil {
-			return fmt.Errorf("message %d must have content", i)
-		}
+				// Validate media part
+				if part.Media == nil {
+					return fmt.Errorf("media part cannot be nil (message %d, part %d)", i, j)
+				}
 
-		// If content is a string, check if it's not empty
-		if contentStr, ok := msg.Content.(string); ok {
-			if contentStr == "" && len(msg.ToolCalls) == 0 {
-				return fmt.Errorf("message %d must have non-empty content or tool calls", i)
-			}
-		}
-
-		// If content is an array (multimodal), validate parts
-		if contentParts, ok := msg.Content.([]interface{}); ok {
-			if len(contentParts) == 0 && len(msg.ToolCalls) == 0 {
-				return fmt.Errorf("message %d must have content parts or tool calls", i)
-			}
-
-			// Validate each content part
-			for j, part := range contentParts {
-				if partMap, ok := part.(map[string]interface{}); ok {
-					partType, hasType := partMap["type"].(string)
-					if !hasType || partType == "" {
-						return fmt.Errorf("message %d part %d must have a type", i, j)
-					}
-
-					switch partType {
-					case GLMContentTypeText:
-						if _, hasText := partMap["text"].(string); !hasText {
-							return fmt.Errorf("message %d part %d text type must have text content", i, j)
-						}
-					case GLMContentTypeImageURL:
-						if imageURL, hasURL := partMap["image_url"].(map[string]interface{}); hasURL {
-							if _, hasURLField := imageURL["url"].(string); !hasURLField {
-								return fmt.Errorf("message %d part %d image_url must have url", i, j)
-							}
-						} else {
-							return fmt.Errorf("message %d part %d image_url type must have image_url object", i, j)
-						}
-					default:
-						return fmt.Errorf("message %d part %d has unsupported type: %s", i, j, partType)
-					}
-				} else {
-					return fmt.Errorf("message %d part %d must be an object", i, j)
+				if part.Media.URL == "" {
+					return fmt.Errorf("media URL cannot be empty (message %d, part %d)", i, j)
 				}
 			}
 		}
 	}
 
-	// Validate model
-	if req.Model == "" {
-		req.Model = c.config.Model
-	}
-
-	// Validate max_tokens
-	if req.MaxTokens != nil && *req.MaxTokens <= 0 {
-		return fmt.Errorf("max_tokens must be positive")
-	}
-
-	// Validate temperature
-	if req.Temperature != nil && (*req.Temperature < 0 || *req.Temperature > 2) {
-		return fmt.Errorf("temperature must be between 0 and 2")
-	}
-
-	// Validate top_p
-	if req.TopP != nil && (*req.TopP < 0 || *req.TopP > 1) {
-		return fmt.Errorf("top_p must be between 0 and 1")
+	// Check if vision model is used with media content
+	if isVisionModel && !hasMedia {
+		c.logger.Warn("Vision model used without media content",
+			"model", c.config.Model,
+			"messages_count", len(req.Messages))
 	}
 
 	return nil
 }
 
-// PrepareRequest creates a GLM request from configuration
-func (c *GLMClient) PrepareRequest() *GLMRequest {
-	return &GLMRequest{
-		Model:            c.config.Model,
-		MaxTokens:        &c.config.MaxTokens,
-		Temperature:      &c.config.Temperature,
-		TopP:             c.config.TopP,
-		FrequencyPenalty: c.config.FrequencyPenalty,
-		PresencePenalty:  c.config.PresencePenalty,
-		Stop:             c.config.Stop,
-		Thinking:         c.config.Thinking,
+// GetModelCapabilities returns capabilities of Z.AI model
+func (c *ZAIClient) GetModelCapabilities() *common.ModelCapabilities {
+	capabilities := &common.ModelCapabilities{
+		SupportsStreaming: true,
+		SupportsTools:     true,
+		SupportsSystem:    true,
+		SupportedTypes:    []common.ContentType{common.ContentTypeText},
+		MaxInputTokens:    c.config.MaxTokens,
+		MaxOutputTokens:   c.config.MaxTokens,
+	}
+
+	// Add vision support for vision models
+	if c.config.ModelType == common.ModelTypeVision || c.config.ModelType == common.ModelTypeMultimodal {
+		capabilities.SupportsVision = true
+		capabilities.SupportedTypes = append(capabilities.SupportedTypes, common.ContentTypeImageURL, common.ContentTypeMedia)
+	}
+
+	return capabilities
+}
+
+// GetModelMetadata returns metadata about Z.AI model
+func (c *ZAIClient) GetModelMetadata() *common.ModelMetadata {
+	metadata := &common.ModelMetadata{
+		Provider:        common.ProviderZAI,
+		Model:           c.config.Model,
+		Capabilities:    *c.GetModelCapabilities(),
+		Version:         "1.0",
+		Description:     "Z.AI GLM - Advanced multimodal language model with vision capabilities",
+		CostPer1KTokens: 0.002, // Example cost
+	}
+
+	// Set model type based on model name
+	if c.config.Model == ZAIVisionModel {
+		metadata.ModelType = common.ModelTypeVision
+	} else if c.config.ModelType == common.ModelTypeMultimodal {
+		metadata.ModelType = common.ModelTypeMultimodal
+	} else {
+		metadata.ModelType = common.ModelTypeText
+	}
+
+	return metadata
+}
+
+// IsHealthy checks if Z.AI client is healthy
+func (c *ZAIClient) IsHealthy(ctx context.Context) error {
+	// Simple health check - try to validate API key
+	if c.apiKey == "" {
+		return fmt.Errorf("API key is not configured")
+	}
+
+	if c.baseURL == "" {
+		return fmt.Errorf("base URL is not configured")
+	}
+
+	return nil
+}
+
+// GetRateLimitInfo returns current rate limit information
+func (c *ZAIClient) GetRateLimitInfo() *common.RateLimitInfo {
+	// Z.AI rate limits (example values - should be updated based on actual API docs)
+	return &common.RateLimitInfo{
+		RequestsPerMinute: 120,
+		TokensPerMinute:   200000,
 	}
 }
 
-// IsVisionModel checks if the specified model supports vision
-func (c *GLMClient) IsVisionModel(model string) bool {
-	return model == GLMVisionModel || strings.Contains(model, "v")
+// PrepareRequestMetrics creates metrics for a request
+func (c *ZAIClient) PrepareRequestMetrics(requestID string, startTime time.Time) *common.RequestMetrics {
+	return &common.RequestMetrics{
+		RequestID: requestID,
+		Provider:  common.ProviderZAI,
+		Model:     c.config.Model,
+		StartTime: startTime,
+		Success:   false, // Will be updated after request completes
+	}
 }
 
-// SupportsThinking checks if the model supports thinking mode
-func (c *GLMClient) SupportsThinking(model string) bool {
-	// GLM-4.6 models support thinking mode
-	return strings.Contains(model, "glm-4.6")
+// LogRequest logs a request to Z.AI API
+func (c *ZAIClient) LogRequest(req *interfaces.PonchoModelRequest, requestID string) {
+	mediaCount := 0
+	for _, msg := range req.Messages {
+		for _, part := range msg.Content {
+			if part.Type == interfaces.PonchoContentTypeMedia {
+				mediaCount++
+			}
+		}
+	}
+
+	c.logger.Debug("Z.AI API request",
+		"request_id", requestID,
+		"model", c.config.Model,
+		"messages_count", len(req.Messages),
+		"media_count", mediaCount,
+		"max_tokens", req.MaxTokens,
+		"temperature", req.Temperature,
+		"stream", req.Stream,
+		"tools_count", len(req.Tools))
+}
+
+// LogResponse logs a response from Z.AI API
+func (c *ZAIClient) LogResponse(resp *interfaces.PonchoModelResponse, requestID string, duration time.Duration) {
+	if resp != nil && resp.Usage != nil {
+		c.logger.Debug("Z.AI API response",
+			"request_id", requestID,
+			"duration_ms", duration.Milliseconds(),
+			"prompt_tokens", resp.Usage.PromptTokens,
+			"completion_tokens", resp.Usage.CompletionTokens,
+			"total_tokens", resp.Usage.TotalTokens,
+			"finish_reason", resp.FinishReason)
+	} else {
+		c.logger.Debug("Z.AI API response",
+			"request_id", requestID,
+			"duration_ms", duration.Milliseconds(),
+			"finish_reason", resp.FinishReason)
+	}
+}
+
+// LogError logs an error from Z.AI API
+func (c *ZAIClient) LogError(err error, requestID string, duration time.Duration) {
+	c.logger.Error("Z.AI API error",
+		"request_id", requestID,
+		"duration_ms", duration.Milliseconds(),
+		"error", err.Error())
+
+	if modelErr, ok := err.(*common.ModelError); ok {
+		c.logger.Error("Z.AI API model error details",
+			"request_id", requestID,
+			"error_code", modelErr.Code,
+			"error_provider", modelErr.Provider,
+			"error_model", modelErr.Model,
+			"error_retryable", modelErr.Retryable,
+			"error_status_code", modelErr.StatusCode)
+	}
 }

@@ -6,245 +6,305 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
 )
 
-// HTTPClientFactory creates and manages HTTP clients for model providers
+// HTTPClient represents a configured HTTP client with retry capabilities
+type HTTPClient struct {
+	client      *http.Client
+	config      *HTTPConfig
+	retryConfig *RetryConfig
+}
+
+// NewHTTPClient creates a new HTTP client with given configuration
+func NewHTTPClient(config *HTTPConfig, retryConfig RetryConfig) (*HTTPClient, error) {
+	if config == nil {
+		config = &DefaultHTTPConfig
+	}
+
+	if retryConfig.MaxAttempts == 0 {
+		retryConfig = RetryConfig{
+			MaxAttempts:     3,
+			BaseDelay:       1 * time.Second,
+			MaxDelay:        30 * time.Second,
+			BackoffType:     BackoffTypeExponential,
+			Jitter:          true,
+			RetryableErrors: []string{"timeout", "rate_limit", "server_error", "network_error"},
+		}
+	}
+
+	// Create transport with custom configuration
+	transport := &http.Transport{
+		MaxIdleConns:        config.MaxIdleConns,
+		MaxIdleConnsPerHost: config.MaxIdleConnsPerHost,
+		IdleConnTimeout:     config.IdleConnTimeout,
+		TLSHandshakeTimeout: config.TLSHandshakeTimeout,
+		MaxConnsPerHost:     config.MaxConnsPerHost,
+		DisableKeepAlives:   config.DisableKeepAlives,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: config.InsecureSkipVerify,
+		},
+	}
+
+	// Create HTTP client
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   config.Timeout,
+	}
+
+	return &HTTPClient{
+		client:      client,
+		config:      config,
+		retryConfig: &retryConfig,
+	}, nil
+}
+
+// Do executes an HTTP request with retry logic
+func (c *HTTPClient) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= c.retryConfig.MaxAttempts; attempt++ {
+		// Clone request for each attempt to avoid body consumption issues
+		reqClone := c.cloneRequest(req)
+
+		// Set user agent if not already set
+		if reqClone.Header.Get("User-Agent") == "" {
+			reqClone.Header.Set("User-Agent", c.config.UserAgent)
+		}
+
+		// Execute request
+		resp, err := c.client.Do(reqClone.WithContext(ctx))
+		if err == nil {
+			// Check for non-retryable status codes
+			if !c.isRetryableStatus(resp.StatusCode) {
+				return resp, nil
+			}
+			resp.Body.Close() // Close body before retry
+		}
+
+		lastErr = err
+
+		// If this is the last attempt, return the error
+		if attempt == c.retryConfig.MaxAttempts {
+			if err != nil {
+				return nil, fmt.Errorf("request failed after %d attempts: %w", c.retryConfig.MaxAttempts, err)
+			}
+			return nil, fmt.Errorf("request failed after %d attempts with status code: %d", c.retryConfig.MaxAttempts, resp.StatusCode)
+		}
+
+		// Calculate delay for next attempt
+		delay := c.calculateDelay(attempt)
+
+		// Wait before retry (with context cancellation)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+			// Continue to next attempt
+		}
+	}
+
+	return nil, lastErr
+}
+
+// Get executes a GET request with retry logic
+func (c *HTTPClient) Get(ctx context.Context, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GET request: %w", err)
+	}
+
+	return c.Do(ctx, req)
+}
+
+// Post executes a POST request with retry logic
+func (c *HTTPClient) Post(ctx context.Context, url string, contentType string, body interface{}) (*http.Response, error) {
+	req, err := c.createRequestWithBody(ctx, "POST", url, contentType, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create POST request: %w", err)
+	}
+
+	return c.Do(ctx, req)
+}
+
+// Put executes a PUT request with retry logic
+func (c *HTTPClient) Put(ctx context.Context, url string, contentType string, body interface{}) (*http.Response, error) {
+	req, err := c.createRequestWithBody(ctx, "PUT", url, contentType, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PUT request: %w", err)
+	}
+
+	return c.Do(ctx, req)
+}
+
+// Delete executes a DELETE request with retry logic
+func (c *HTTPClient) Delete(ctx context.Context, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DELETE request: %w", err)
+	}
+
+	return c.Do(ctx, req)
+}
+
+// Close closes the HTTP client and cleans up resources
+func (c *HTTPClient) Close() error {
+	// Close idle connections
+	c.client.CloseIdleConnections()
+	return nil
+}
+
+// GetConfig returns client configuration
+func (c *HTTPClient) GetConfig() *HTTPConfig {
+	return c.config
+}
+
+// GetRetryConfig returns retry configuration
+func (c *HTTPClient) GetRetryConfig() *RetryConfig {
+	return c.retryConfig
+}
+
+// cloneRequest creates a clone of the HTTP request
+func (c *HTTPClient) cloneRequest(req *http.Request) *http.Request {
+	// Create new request
+	reqClone := new(http.Request)
+	*reqClone = *req
+
+	// Clone header
+	reqClone.Header = make(http.Header, len(req.Header))
+	for k, v := range req.Header {
+		reqClone.Header[k] = append([]string(nil), v...)
+	}
+
+	return reqClone
+}
+
+// isRetryableStatus checks if the HTTP status code is retryable
+func (c *HTTPClient) isRetryableStatus(statusCode int) bool {
+	// Don't retry for client errors (4xx) except for specific cases
+	if statusCode >= 400 && statusCode < 500 {
+		switch statusCode {
+		case 408, // Request Timeout
+			429, // Too Many Requests
+			449, // Retry With (proprietary)
+			509: // Bandwidth Limit Exceeded
+			return true
+		default:
+			return false
+		}
+	}
+
+	// Retry for server errors (5xx)
+	return statusCode >= 500
+}
+
+// calculateDelay calculates the delay before the next retry attempt
+func (c *HTTPClient) calculateDelay(attempt int) time.Duration {
+	var delay time.Duration
+
+	switch c.retryConfig.BackoffType {
+	case BackoffTypeLinear:
+		delay = time.Duration(attempt) * c.retryConfig.BaseDelay
+	case BackoffTypeExponential:
+		delay = c.retryConfig.BaseDelay * time.Duration(1<<uint(attempt-1))
+	default:
+		delay = c.retryConfig.BaseDelay
+	}
+
+	// Apply jitter (±25% random variation)
+	jitter := time.Duration(float64(delay) * 0.25 * (2.0*float64(time.Now().UnixNano()%1000)/1000.0 - 1.0))
+	delay += jitter
+
+	// Ensure delay doesn't exceed max delay
+	if delay > c.retryConfig.MaxDelay {
+		delay = c.retryConfig.MaxDelay
+	}
+
+	return delay
+}
+
+// createRequestWithBody creates an HTTP request with a body
+func (c *HTTPClient) createRequestWithBody(ctx context.Context, method, url, contentType string, body interface{}) (*http.Request, error) {
+	var req *http.Request
+	var err error
+
+	if body == nil {
+		req, err = http.NewRequestWithContext(ctx, method, url, nil)
+	} else {
+		// Handle different body types
+		switch body := body.(type) {
+		case string:
+			req, err = http.NewRequestWithContext(ctx, method, url, strings.NewReader(body))
+		case []byte:
+			req, err = http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+		default:
+			// Try to marshal as JSON for complex types
+			if contentType == MIMETypeJSON || contentType == "" {
+				jsonBody, err := json.Marshal(body)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal body as JSON: %w", err)
+				}
+				req, err = http.NewRequestWithContext(ctx, method, url, bytes.NewReader(jsonBody))
+			} else {
+				return nil, fmt.Errorf("unsupported body type: %T for content type: %s", body, contentType)
+			}
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	return req, nil
+}
+
+// HTTPClientFactory creates HTTP clients for different providers
 type HTTPClientFactory struct {
-	config  HTTPConfig
-	logger  interfaces.Logger
-	clients map[string]*http.Client
-	mutex   sync.RWMutex
+	config *HTTPConfig
+	logger interfaces.Logger
 }
 
 // NewHTTPClientFactory creates a new HTTP client factory
-func NewHTTPClientFactory(config HTTPConfig, logger interfaces.Logger) *HTTPClientFactory {
-	if logger == nil {
-		logger = interfaces.NewDefaultLogger()
-	}
-
-	// Use default config if not provided
-	if config.Timeout == 0 {
-		config = DefaultHTTPConfig
+func NewHTTPClientFactory(config *HTTPConfig, logger interfaces.Logger) *HTTPClientFactory {
+	if config == nil {
+		config = &DefaultHTTPConfig
 	}
 
 	return &HTTPClientFactory{
-		config:  config,
-		logger:  logger,
-		clients: make(map[string]*http.Client),
+		config: config,
+		logger: logger,
 	}
 }
 
 // GetClient returns an HTTP client for the specified provider
-func (f *HTTPClientFactory) GetClient(provider Provider) *http.Client {
-	f.mutex.RLock()
-	client, exists := f.clients[string(provider)]
-	f.mutex.RUnlock()
+func (f *HTTPClientFactory) GetClient(provider Provider) *HTTPClient {
+	retryConfig := DefaultRetryConfig
 
-	if exists {
-		return client
+	client, err := NewHTTPClient(f.config, retryConfig)
+	if err != nil {
+		// In a real implementation, you might want to handle this error
+		// For now, we'll return nil
+		return nil
 	}
 
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-
-	// Double-check after acquiring write lock
-	if client, exists := f.clients[string(provider)]; exists {
-		return client
-	}
-
-	// Create new client
-	client = f.createClient()
-	f.clients[string(provider)] = client
-
-	f.logger.Debug("Created new HTTP client for provider", "provider", provider)
 	return client
 }
 
-// createClient creates a new HTTP client with the factory configuration
-func (f *HTTPClientFactory) createClient() *http.Client {
-	transport := &http.Transport{
-		MaxIdleConns:        f.config.MaxIdleConns,
-		MaxIdleConnsPerHost: f.config.MaxIdleConnsPerHost,
-		IdleConnTimeout:     f.config.IdleConnTimeout,
-		TLSHandshakeTimeout:  f.config.TLSHandshakeTimeout,
-		MaxConnsPerHost:      f.config.MaxConnsPerHost,
-		ReadBufferSize:       f.config.ReadBufferSize,
-		WriteBufferSize:      f.config.WriteBufferSize,
-		DisableCompression:   f.config.DisableCompression,
-		DisableKeepAlives:    f.config.DisableKeepAlives,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: f.config.InsecureSkipVerify,
-		},
-	}
-
-	// Configure proxy if provided
-	if f.config.ProxyURL != "" {
-		if proxyURL, err := url.Parse(f.config.ProxyURL); err == nil {
-			transport.Proxy = http.ProxyURL(proxyURL)
-		} else {
-			f.logger.Warn("Invalid proxy URL", "url", f.config.ProxyURL, "error", err)
-		}
-	}
-
-	// Configure dial context for connection timeouts
-	transport.DialContext = (&net.Dialer{
-		Timeout:   f.config.Timeout,
-		KeepAlive: 30 * time.Second,
-	}).DialContext
-
-	return &http.Client{
-		Timeout:   f.config.Timeout,
-		Transport: transport,
-	}
-}
-
-// UpdateConfig updates the factory configuration
-func (f *HTTPClientFactory) UpdateConfig(config HTTPConfig) {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-
-	f.config = config
-
-	// Close existing clients
-	for provider, client := range f.clients {
-		if transport, ok := client.Transport.(*http.Transport); ok {
-			transport.CloseIdleConnections()
-		}
-		delete(f.clients, provider)
-	}
-
-	f.logger.Info("Updated HTTP client factory configuration")
-}
-
-// Close closes all HTTP clients and cleans up resources
-func (f *HTTPClientFactory) Close() error {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-
-	for provider, client := range f.clients {
-		if transport, ok := client.Transport.(*http.Transport); ok {
-			transport.CloseIdleConnections()
-		}
-		delete(f.clients, provider)
-	}
-
-	f.logger.Info("Closed all HTTP clients")
-	return nil
-}
-
-// GetConfig returns the current configuration
-func (f *HTTPClientFactory) GetConfig() HTTPConfig {
-	return f.config
-}
-
-// HTTPClient represents a wrapper around http.Client with additional functionality
-type HTTPClient struct {
-	client    *http.Client
-	config    HTTPConfig
-	provider  Provider
-	logger    interfaces.Logger
-	requestID string
-}
-
-// NewHTTPClient creates a new HTTP client wrapper
-func NewHTTPClient(client *http.Client, config HTTPConfig, provider Provider, logger interfaces.Logger) *HTTPClient {
-	if logger == nil {
-		logger = interfaces.NewDefaultLogger()
-	}
-
-	return &HTTPClient{
-		client:   client,
-		config:   config,
-		provider: provider,
-		logger:   logger,
-	}
-}
-
-// Do executes an HTTP request with logging and metrics
-func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
-	startTime := time.Now()
-
-	// Add common headers
-	c.addCommonHeaders(req)
-
-	// Log request
-	c.logger.Debug("Sending HTTP request",
-		"method", req.Method,
-		"url", req.URL.String(),
-		"provider", c.provider,
-		"request_id", c.requestID)
-
-	// Execute request
-	resp, err := c.client.Do(req)
-	duration := time.Since(startTime)
-
-	// Log response
-	if err != nil {
-		c.logger.Error("HTTP request failed",
-			"error", err,
-			"duration", duration,
-			"provider", c.provider,
-			"request_id", c.requestID)
-	} else {
-		c.logger.Debug("HTTP request completed",
-			"status_code", resp.StatusCode,
-			"duration", duration,
-			"provider", c.provider,
-			"request_id", c.requestID)
-	}
-
-	return resp, err
-}
-
-// DoWithContext executes an HTTP request with context
-func (c *HTTPClient) DoWithContext(ctx context.Context, req *http.Request) (*http.Response, error) {
-	req = req.WithContext(ctx)
-	return c.Do(req)
-}
-
-// addCommonHeaders adds common headers to the request
-func (c *HTTPClient) addCommonHeaders(req *http.Request) {
-	if req.Header.Get(HeaderUserAgent) == "" {
-		req.Header.Set(HeaderUserAgent, c.config.UserAgent)
-	}
-
-	if c.requestID != "" {
-		req.Header.Set(HeaderXRequestID, c.requestID)
-	}
-}
-
-// SetRequestID sets the request ID for tracking
-func (c *HTTPClient) SetRequestID(requestID string) {
-	c.requestID = requestID
-}
-
-// GetRequestID returns the current request ID
-func (c *HTTPClient) GetRequestID() string {
-	return c.requestID
-}
-
-// Close closes the HTTP client
-func (c *HTTPClient) Close() error {
-	if transport, ok := c.client.Transport.(*http.Transport); ok {
-		transport.CloseIdleConnections()
-	}
-	return nil
-}
-
-// HTTPRequestBuilder helps build HTTP requests with common patterns
+// HTTPRequestBuilder helps build HTTP requests
 type HTTPRequestBuilder struct {
 	method  string
 	url     string
 	headers map[string]string
-	body    []byte
 	query   map[string]string
+	body    []byte
 }
 
 // NewHTTPRequestBuilder creates a new HTTP request builder
@@ -271,55 +331,23 @@ func (b *HTTPRequestBuilder) SetHeaders(headers map[string]string) *HTTPRequestB
 	return b
 }
 
-// SetBody sets the request body
-func (b *HTTPRequestBuilder) SetBody(body []byte) *HTTPRequestBuilder {
-	b.body = body
-	return b
-}
-
 // SetQuery sets a query parameter
 func (b *HTTPRequestBuilder) SetQuery(key, value string) *HTTPRequestBuilder {
 	b.query[key] = value
 	return b
 }
 
-// SetQueryParams sets multiple query parameters
-func (b *HTTPRequestBuilder) SetQueryParams(params map[string]string) *HTTPRequestBuilder {
-	for k, v := range params {
-		b.query[k] = v
-	}
+// SetBody sets the request body
+func (b *HTTPRequestBuilder) SetBody(body []byte) *HTTPRequestBuilder {
+	b.body = body
 	return b
 }
 
 // Build builds the HTTP request
 func (b *HTTPRequestBuilder) Build() (*http.Request, error) {
-	// Add query parameters to URL
-	if len(b.query) > 0 {
-		parsedURL, err := url.Parse(b.url)
-		if err != nil {
-			return nil, fmt.Errorf("invalid URL: %w", err)
-		}
-
-		query := parsedURL.Query()
-		for k, v := range b.query {
-			query.Set(k, v)
-		}
-		parsedURL.RawQuery = query.Encode()
-		b.url = parsedURL.String()
-	}
-
-	// Create request
-	var req *http.Request
-	var err error
-
-	if b.body != nil {
-		req, err = http.NewRequest(b.method, b.url, bytes.NewReader(b.body))
-	} else {
-		req, err = http.NewRequest(b.method, b.url, nil)
-	}
-
+	req, err := http.NewRequest(b.method, b.url, bytes.NewReader(b.body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
 
 	// Set headers
@@ -327,114 +355,60 @@ func (b *HTTPRequestBuilder) Build() (*http.Request, error) {
 		req.Header.Set(k, v)
 	}
 
+	// Set query parameters
+	if len(b.query) > 0 {
+		q := req.URL.Query()
+		for k, v := range b.query {
+			q.Set(k, v)
+		}
+		req.URL.RawQuery = q.Encode()
+	}
+
 	return req, nil
 }
 
-// HTTPResponse represents a wrapped HTTP response with utility methods
+// HTTPResponse wraps http.Response with helper methods
 type HTTPResponse struct {
-	Response *http.Response
-	Body     []byte
-	Duration time.Duration
+	*http.Response
 }
 
-// NewHTTPResponse creates a new HTTP response wrapper
-func NewHTTPResponse(resp *http.Response, body []byte, duration time.Duration) *HTTPResponse {
-	return &HTTPResponse{
-		Response: resp,
-		Body:     body,
-		Duration: duration,
-	}
-}
-
-// IsSuccess returns true if the response status code indicates success
+// IsSuccess returns true for successful status codes (2xx)
 func (r *HTTPResponse) IsSuccess() bool {
-	return r.Response.StatusCode >= 200 && r.Response.StatusCode < 300
+	return r.StatusCode >= 200 && r.StatusCode < 300
 }
 
-// IsClientError returns true if the response status code indicates a client error
+// IsClientError returns true for client error status codes (4xx)
 func (r *HTTPResponse) IsClientError() bool {
-	return r.Response.StatusCode >= 400 && r.Response.StatusCode < 500
+	return r.StatusCode >= 400 && r.StatusCode < 500
 }
 
-// IsServerError returns true if the response status code indicates a server error
+// IsServerError returns true for server error status codes (5xx)
 func (r *HTTPResponse) IsServerError() bool {
-	return r.Response.StatusCode >= 500
+	return r.StatusCode >= 500
 }
-
-// GetRateLimitInfo extracts rate limit information from response headers
-func (r *HTTPResponse) GetRateLimitInfo() *RateLimitInfo {
-	info := &RateLimitInfo{}
-
-	// Extract common rate limit headers
-	if retryAfter := r.Response.Header.Get(HeaderRetryAfter); retryAfter != "" {
-		if duration, err := time.ParseDuration(retryAfter + "s"); err == nil {
-			info.RetryAfter = &duration
-		}
-	}
-
-	// Note: Different providers use different headers for rate limiting
-	// This can be extended based on specific provider requirements
-
-	return info
-}
-
-// GetHeader returns the value of a response header
-func (r *HTTPResponse) GetHeader(key string) string {
-	return r.Response.Header.Get(key)
-}
-
-// GetHeaders returns all response headers
-func (r *HTTPResponse) GetHeaders() map[string][]string {
-	return r.Response.Header
-}
-
-// Helper functions
 
 // CreateJSONRequest creates a JSON HTTP request
 func CreateJSONRequest(method, url string, body interface{}, headers map[string]string) (*http.Request, error) {
-	var bodyBytes []byte
-	var err error
+	builder := NewHTTPRequestBuilder(method, url)
 
 	if body != nil {
-		bodyBytes, err = json.Marshal(body)
+		bodyBytes, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+			return nil, err
 		}
+		builder.SetBody(bodyBytes)
 	}
 
-	builder := NewHTTPRequestBuilder(method, url).
-		SetBody(bodyBytes).
-		SetHeader(HeaderContentType, MIMETypeJSON).
-		SetHeader(HeaderAccept, MIMETypeJSON)
-
-	if headers != nil {
-		builder.SetHeaders(headers)
+	if headers == nil {
+		headers = make(map[string]string)
 	}
 
-	return builder.Build()
-}
-
-// CreateStreamingRequest creates a streaming HTTP request
-func CreateStreamingRequest(method, url string, body interface{}, headers map[string]string) (*http.Request, error) {
-	var bodyBytes []byte
-	var err error
-
-	if body != nil {
-		bodyBytes, err = json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
-		}
+	// Set default content type for JSON
+	if _, exists := headers["Content-Type"]; !exists {
+		headers["Content-Type"] = "application/json"
 	}
 
-	builder := NewHTTPRequestBuilder(method, url).
-		SetBody(bodyBytes).
-		SetHeader(HeaderContentType, MIMETypeJSON).
-		SetHeader(HeaderAccept, MIMETypeEventStream).
-		SetHeader(HeaderCacheControl, "no-cache")
-
-	if headers != nil {
-		builder.SetHeaders(headers)
-	}
+	builder.SetHeaders(headers)
 
 	return builder.Build()
 }

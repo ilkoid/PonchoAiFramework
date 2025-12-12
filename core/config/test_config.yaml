@@ -2,14 +2,16 @@ models:
   test-model:
     provider: "test-provider"
     model_name: "test-model"
-    api_key: "test-key"
+    api_key: "test-key-that-is-long-enough-to-pass-validation"
     max_tokens: 1000
     temperature: 0.7
+    timeout: "30s"
     supports:
-      vision: false
+      streaming: true
       tools: true
-      stream: true
+      vision: false
       system: true
+      json_mode: true
 
 tools:
   test-tool:

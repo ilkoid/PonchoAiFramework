@@ -10,20 +10,28 @@ func TestConfigManager_Load_FromFile(t *testing.T) {
 	// Создаем временный конфигурационный файл
 	configContent := `
 models:
-  deepseek:
-    provider: "deepseek"
-    api_key: "test-key"
-    max_tokens: 4000
-    temperature: 0.7
+	 deepseek:
+	   provider: "deepseek"
+	   model_name: "deepseek-chat"
+	   api_key: "test-key-that-is-long-enough-to-pass-validation"
+	   max_tokens: 4000
+	   temperature: 0.7
+	   timeout: "30s"
+	   supports:
+	     streaming: true
+	     tools: true
+	     vision: false
+	     system: true
+	     json_mode: true
 
 tools:
-  test_tool:
-    enabled: true
-    timeout: "30s"
+	 test_tool:
+	   enabled: true
+	   timeout: "30s"
 
 logger:
-  level: "info"
-  format: "text"
+	 level: "info"
+	 format: "text"
 `
 
 	tmpFile, err := os.CreateTemp("", "test_config_*.yaml")
@@ -89,8 +97,11 @@ func TestConfigManager_Load_WithEnvironmentVariables(t *testing.T) {
 	configContent := "models:\n" +
 		"  deepseek:\n" +
 		"    provider: \"deepseek\"\n" +
-		"    api_key: \"default-key\"\n" +
+		"    model_name: \"deepseek-chat\"\n" +
+		"    api_key: \"default-key-that-is-long-enough-to-pass-validation\"\n" +
 		"    max_tokens: 4000\n" +
+		"    temperature: 0.7\n" +
+		"    timeout: \"30s\"\n" +
 		"\n" +
 		"tools:\n" +
 		"  test_tool:\n" +
@@ -148,7 +159,11 @@ func TestConfigManager_Get_DefaultValues(t *testing.T) {
 	configContent := "models:\n" +
 		"  deepseek:\n" +
 		"    provider: \"deepseek\"\n" +
-		"    api_key: \"dummy\"\n" +
+		"    model_name: \"deepseek-chat\"\n" +
+		"    api_key: \"dummy-key-that-is-long-enough-to-pass-validation\"\n" +
+		"    max_tokens: 4000\n" +
+		"    temperature: 0.7\n" +
+		"    timeout: \"30s\"\n" +
 		"\n" +
 		"tools:\n" +
 		"  dummy_tool:\n" +
@@ -330,7 +345,11 @@ func TestConfigManager_Reload(t *testing.T) {
 	configContent := "models:\n" +
 		"  deepseek:\n" +
 		"    provider: \"deepseek\"\n" +
-		"    api_key: \"dummy\"\n" +
+		"    model_name: \"deepseek-chat\"\n" +
+		"    api_key: \"dummy-key-that-is-long-enough-to-pass-validation\"\n" +
+		"    max_tokens: 4000\n" +
+		"    temperature: 0.7\n" +
+		"    timeout: \"30s\"\n" +
 		"initial:\n" +
 		"  value: \"original\"\n"
 
@@ -363,7 +382,11 @@ func TestConfigManager_Reload(t *testing.T) {
 	newContent := "models:\n" +
 		"  deepseek:\n" +
 		"    provider: \"deepseek\"\n" +
-		"    api_key: \"dummy\"\n" +
+		"    model_name: \"deepseek-chat\"\n" +
+		"    api_key: \"dummy-key-that-is-long-enough-to-pass-validation\"\n" +
+		"    max_tokens: 4000\n" +
+		"    temperature: 0.7\n" +
+		"    timeout: \"30s\"\n" +
 		"initial:\n" +
 		"  value: \"updated\"\n" +
 		"new:\n" +
@@ -397,7 +420,11 @@ func TestConfigManager_Validate(t *testing.T) {
 
 	// Валидная конфигурация
 	manager.Set("models.test.provider", "deepseek")
-	manager.Set("models.test.api_key", "test-key")
+	manager.Set("models.test.model_name", "test-model")
+	manager.Set("models.test.api_key", "test-key-that-is-long-enough-to-pass-validation")
+	manager.Set("models.test.max_tokens", 4000)
+	manager.Set("models.test.temperature", 0.7)
+	manager.Set("models.test.timeout", "30s")
 
 	err := manager.Validate()
 	if err != nil {
@@ -481,7 +508,11 @@ func TestConfigManager_EnvironmentVariableTypes(t *testing.T) {
 	configContent := "models:\n" +
 		"  deepseek:\n" +
 		"    provider: \"deepseek\"\n" +
-		"    api_key: \"dummy\"\n"
+		"    model_name: \"deepseek-chat\"\n" +
+		"    api_key: \"dummy-key-that-is-long-enough-to-pass-validation\"\n" +
+		"    max_tokens: 4000\n" +
+		"    temperature: 0.7\n" +
+		"    timeout: \"30s\"\n"
 	tmpFile, err := os.CreateTemp("", "test_config_*.yaml")
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
@@ -540,7 +571,11 @@ func TestConfigManager_MultipleFilesMerge(t *testing.T) {
 	overrideContent := "models:\n" +
 		"  deepseek:\n" +
 		"    provider: \"deepseek\"\n" +
-		"    api_key: \"dummy\"\n" +
+		"    model_name: \"deepseek-chat\"\n" +
+		"    api_key: \"dummy-key-that-is-long-enough-to-pass-validation\"\n" +
+		"    max_tokens: 4000\n" +
+		"    temperature: 0.7\n" +
+		"    timeout: \"30s\"\n" +
 		"override:\n" +
 		"  value: \"override\"\n" +
 		"base:\n" +

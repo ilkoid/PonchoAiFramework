@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
 )
@@ -514,16 +515,69 @@ func (cv *ConfigValidatorImpl) addDefaultRules() {
 	})
 
 	cv.AddRule(ConfigValidationRule{
+		Name:     "model_name_required",
+		Path:     "models.*.model_name",
+		Required: true,
+		Type:     TypeString,
+		CustomFunc: func(value interface{}) error {
+			if modelName, ok := value.(string); ok {
+				if len(modelName) < 1 {
+					return fmt.Errorf("model_name cannot be empty")
+				}
+				if len(modelName) > 100 {
+					return fmt.Errorf("model_name cannot exceed 100 characters")
+				}
+			}
+			return nil
+		},
+	})
+
+	cv.AddRule(ConfigValidationRule{
 		Name:     "model_api_key_required",
 		Path:     "models.*.api_key",
 		Required: true,
 		Type:     TypeString,
+		CustomFunc: func(value interface{}) error {
+			if apiKey, ok := value.(string); ok {
+				// Check if it's an environment variable reference
+				if len(apiKey) > 2 && apiKey[:2] == "${" && apiKey[len(apiKey)-1] == '}' {
+					envVar := apiKey[2 : len(apiKey)-1]
+					if envVar == "" {
+						return fmt.Errorf("invalid environment variable reference")
+					}
+					return nil
+				}
+				// Validate API key format (basic check)
+				if len(apiKey) < 10 {
+					return fmt.Errorf("api_key appears to be too short")
+				}
+			}
+			return nil
+		},
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_base_url",
+		Path:     "models.*.base_url",
+		Required: false,
+		Type:     TypeString,
+		CustomFunc: func(value interface{}) error {
+			if baseURL, ok := value.(string); ok && baseURL != "" {
+				if len(baseURL) < 8 {
+					return fmt.Errorf("base_url appears to be invalid")
+				}
+				if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+					return fmt.Errorf("base_url must start with http:// or https://")
+				}
+			}
+			return nil
+		},
 	})
 
 	cv.AddRule(ConfigValidationRule{
 		Name:     "model_max_tokens",
 		Path:     "models.*.max_tokens",
-		Required: false,
+		Required: true,
 		Type:     TypeInt,
 		Min:      1,
 		Max:      100000,
@@ -532,10 +586,200 @@ func (cv *ConfigValidatorImpl) addDefaultRules() {
 	cv.AddRule(ConfigValidationRule{
 		Name:     "model_temperature",
 		Path:     "models.*.temperature",
-		Required: false,
+		Required: true,
 		Type:     TypeFloat,
 		Min:      0.0,
 		Max:      2.0,
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_timeout",
+		Path:     "models.*.timeout",
+		Required: true,
+		Type:     TypeDuration,
+		CustomFunc: func(value interface{}) error {
+			if timeout, ok := value.(string); ok {
+				if duration, err := time.ParseDuration(timeout); err != nil {
+					return fmt.Errorf("invalid timeout format: %s", timeout)
+				} else if duration < time.Second*5 {
+					return fmt.Errorf("timeout must be at least 5 seconds")
+				} else if duration > time.Minute*10 {
+					return fmt.Errorf("timeout must be at most 10 minutes")
+				}
+			}
+			return nil
+		},
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_retry_max_attempts",
+		Path:     "models.*.retry.max_attempts",
+		Required: false,
+		Type:     TypeInt,
+		Min:      1,
+		Max:      10,
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_retry_backoff",
+		Path:     "models.*.retry.backoff",
+		Required: false,
+		Type:     TypeString,
+		Enum:     []interface{}{"linear", "exponential"},
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_retry_base_delay",
+		Path:     "models.*.retry.base_delay",
+		Required: false,
+		Type:     TypeDuration,
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_retry_max_delay",
+		Path:     "models.*.retry.max_delay",
+		Required: false,
+		Type:     TypeDuration,
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_supports_streaming",
+		Path:     "models.*.supports.streaming",
+		Required: false,
+		Type:     TypeBool,
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_supports_tools",
+		Path:     "models.*.supports.tools",
+		Required: false,
+		Type:     TypeBool,
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_supports_vision",
+		Path:     "models.*.supports.vision",
+		Required: false,
+		Type:     TypeBool,
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_supports_system",
+		Path:     "models.*.supports.system",
+		Required: false,
+		Type:     TypeBool,
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "model_supports_json_mode",
+		Path:     "models.*.supports.json_mode",
+		Required: false,
+		Type:     TypeBool,
+	})
+
+	// Provider-specific validation rules
+	cv.AddRule(ConfigValidationRule{
+		Name:     "deepseek_vision_not_supported",
+		Path:     "models.*",
+		Required: false,
+		Type:     TypeObject,
+		CustomFunc: func(value interface{}) error {
+			if modelConfig, ok := value.(map[string]interface{}); ok {
+				if provider, ok := modelConfig["provider"].(string); ok && provider == "deepseek" {
+					if supports, ok := modelConfig["supports"].(map[string]interface{}); ok {
+						if vision, ok := supports["vision"].(bool); ok && vision {
+							return fmt.Errorf("DeepSeek models do not support vision")
+						}
+					}
+				}
+			}
+			return nil
+		},
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "zai_vision_model_validation",
+		Path:     "models.*",
+		Required: false,
+		Type:     TypeObject,
+		CustomFunc: func(value interface{}) error {
+			if modelConfig, ok := value.(map[string]interface{}); ok {
+				if provider, ok := modelConfig["provider"].(string); ok && provider == "zai" {
+					if supports, ok := modelConfig["supports"].(map[string]interface{}); ok {
+						if vision, ok := supports["vision"].(bool); ok && vision {
+							modelName, _ := modelConfig["model_name"].(string)
+							visionModels := []string{"glm-4.6v", "glm-4.5v", "glm-4v", "glm-4.6v-flash"}
+							found := false
+							for _, model := range visionModels {
+								if modelName == model {
+									found = true
+									break
+								}
+							}
+							if !found {
+								return fmt.Errorf("model %s does not support vision for Z.AI provider", modelName)
+							}
+						}
+					}
+				}
+			}
+			return nil
+		},
+	})
+
+	// Custom parameter validation rules
+	cv.AddRule(ConfigValidationRule{
+		Name:     "deepseek_custom_params",
+		Path:     "models.*.custom_params",
+		Required: false,
+		Type:     TypeObject,
+		CustomFunc: func(value interface{}) error {
+			if params, ok := value.(map[string]interface{}); ok {
+				validParams := map[string]bool{
+					"top_p":             true,
+					"frequency_penalty": true,
+					"presence_penalty":  true,
+					"stop":              true,
+					"response_format":   true,
+					"thinking":          true,
+					"logprobs":          true,
+					"top_logprobs":      true,
+				}
+				for param := range params {
+					if !validParams[param] {
+						return fmt.Errorf("unknown DeepSeek parameter: %s", param)
+					}
+				}
+			}
+			return nil
+		},
+	})
+
+	cv.AddRule(ConfigValidationRule{
+		Name:     "zai_custom_params",
+		Path:     "models.*.custom_params",
+		Required: false,
+		Type:     TypeObject,
+		CustomFunc: func(value interface{}) error {
+			if params, ok := value.(map[string]interface{}); ok {
+				validParams := map[string]bool{
+					"top_p":             true,
+					"frequency_penalty": true,
+					"presence_penalty":  true,
+					"stop":              true,
+					"thinking":          true,
+					"logprobs":          true,
+					"top_logprobs":      true,
+					"max_image_size":    true,
+				}
+				for param := range params {
+					if !validParams[param] {
+						return fmt.Errorf("unknown Z.AI parameter: %s", param)
+					}
+				}
+			}
+			return nil
+		},
 	})
 
 	// Правила для инструментов

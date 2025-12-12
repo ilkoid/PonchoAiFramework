@@ -114,7 +114,6 @@ type PonchoFrameworkConfig struct {
 	Security    *SecurityConfig         `json:"security"`
 	S3          *S3Config               `json:"s3"`
 	Wildberries *WildberriesConfig      `json:"wildberries"`
-	
 }
 
 // ModelConfig represents configuration for a specific model
@@ -137,6 +136,37 @@ type ModelCapabilities struct {
 	Tools     bool `json:"tools"`
 	Vision    bool `json:"vision"`
 	System    bool `json:"system"`
+	JSONMode  bool `json:"json_mode,omitempty"`
+}
+
+// ThinkingConfig represents thinking mode configuration for Z.AI models
+type ThinkingConfig struct {
+	Type         string `json:"type"` // enabled, disabled
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
+// DeepSeekCustomParams represents DeepSeek-specific custom parameters
+type DeepSeekCustomParams struct {
+	TopP             *float32 `json:"top_p,omitempty"`
+	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float32 `json:"presence_penalty,omitempty"`
+	ResponseFormat   string   `json:"response_format,omitempty"` // auto, json_object
+	Thinking         bool     `json:"thinking,omitempty"`
+	Stop             []string `json:"stop,omitempty"`
+	Logprobs         bool     `json:"logprobs,omitempty"`
+	TopLogprobs      *int     `json:"top_logprobs,omitempty"`
+}
+
+// ZAICustomParams represents Z.AI-specific custom parameters
+type ZAICustomParams struct {
+	TopP             *float32        `json:"top_p,omitempty"`
+	FrequencyPenalty *float32        `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float32        `json:"presence_penalty,omitempty"`
+	MaxImageSize     string          `json:"max_image_size,omitempty"` // "10MB", "5MB"
+	Thinking         *ThinkingConfig `json:"thinking,omitempty"`
+	Stop             []string        `json:"stop,omitempty"`
+	Logprobs         bool            `json:"logprobs,omitempty"`
+	TopLogprobs      *int            `json:"top_logprobs,omitempty"`
 }
 
 // ToolConfig represents configuration for a specific tool

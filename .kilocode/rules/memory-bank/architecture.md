@@ -52,11 +52,13 @@ PonchoFramework follows a clean architecture pattern with clear separation of co
 │   ├── article_importer/
 │   ├── mini_agent/
 │   └── common/              # Shared flow utilities
-├── prompts/                 # Prompt management (NOT IMPLEMENTED YET)
-│   ├── manager.go
-│   ├── loader.go
-│   ├── template.go
-│   └── executor.go
+├── prompts/                 # Prompt management (✅ IMPLEMENTED - Phase 5 Complete)
+│   ├── manager.go          # Main prompt manager ✅
+│   ├── types.go           # Prompt system types and extensions ✅
+│   ├── parser.go           # Template loader with V1 format support ✅
+│   ├── executor.go         # Template execution engine ✅
+│   ├── validator.go        # Template validation system ✅
+│   └── cache.go           # LRU cache implementation ✅
 ├── docs/                    # Documentation (EXISTS)
 │   ├── README.md
 │   ├── poncho-framework-design.md
@@ -182,22 +184,22 @@ Model, tool, and flow creation uses factory functions for consistent initializat
 │  └──────────────────────────────────────────────────┘ │
 │         │              │              │              │
 │         ▼              ▼              ▼              │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐        │
-│  │  Model   │  │   Tool   │  │   Flow   │        │
-│  │ Registry │  │ Registry │  │ Registry │        │
-│  └──────────┘  └──────────┘  └──────────┘        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
+│  │  Model   │  │   Tool   │  │   Flow   │  │  Prompt  │ │
+│  │ Registry │  │ Registry │  │ Registry │  │ Manager  │ │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘ │
 ├─────────────────────────────────────────────────────────────┤
 │                Implementation Layer                    │
-│  ┌─────────────┬─────────────┬─────────────────────┐ │
-│  │   Models    │    Tools    │       Flows         │ │
-│  │             │             │                     │ │
-│  │ DeepSeek    │ S3 Import   │ Article Importer    │ │
-│  │ Z.AI (GLM)  │ WB API      │ Mini-Agent          │ │
-│  │ Vision      │ Vision      │ Description Gen     │ │
-│  │ Custom      │ Custom      │ Custom              │ │
-│  └─────────────┴─────────────┴─────────────────────┘ │
-│         │              │              │              │
-│         ▼              ▼              ▼              │
+│  ┌─────────────┬─────────────┬─────────────────────┬─────────────┐ │
+│  │   Models    │    Tools    │       Flows         │   Prompts    │ │
+│  │             │             │                     │             │ │
+│  │ DeepSeek    │ S3 Import   │ Article Importer    │ V1 Parser   │ │
+│  │ Z.AI (GLM)  │ WB API      │ Mini-Agent          │ Templates   │ │
+│  │ Vision      │ Vision      │ Description Gen     │ Validator   │ │
+│  │ Custom      │ Custom      │ Custom              │ Cache       │ │
+│  └─────────────┴─────────────┴─────────────────────┴─────────────┘ │
+│         │              │              │              │              │
+│         ▼              ▼              ▼              ▼              │
 ├─────────────────────────────────────────────────────────────┤
 │              Infrastructure Layer                      │
 │  ┌─────────────┬─────────────┬─────────────────────┐ │
@@ -211,82 +213,24 @@ Model, tool, and flow creation uses factory functions for consistent initializat
 ## Interface Specifications
 
 ### PonchoModel Interface
-
 **Purpose:** Unified interface for all AI models
-
-```go
-type PonchoModel interface {
-    // Core generation
-    Generate(ctx context.Context, req *PonchoModelRequest) (*PonchoModelResponse, error)
-    GenerateStreaming(ctx context.Context, req *PonchoModelRequest, callback PonchoStreamCallback) error
-    
-    // Capabilities
-    SupportsStreaming() bool
-    SupportsTools() bool
-    SupportsVision() bool
-    SupportsSystemRole() bool
-    
-    // Metadata
-    Name() string
-    Provider() string
-    MaxTokens() int
-    DefaultTemperature() float32
-}
-```
+- Generate/GenerateStreaming methods
+- Capability methods (Streaming, Tools, Vision, SystemRole)
+- Metadata methods (Name, Provider, MaxTokens, Temperature)
 
 ### PonchoTool Interface
-
 **Purpose:** Unified interface for all tools
-
-```go
-type PonchoTool interface {
-    // Identity
-    Name() string
-    Description() string
-    Version() string
-    
-    // Execution
-    Execute(ctx context.Context, input interface{}) (interface{}, error)
-    
-    // Schema
-    InputSchema() map[string]interface{}
-    OutputSchema() map[string]interface{}
-    
-    // Validation
-    Validate(input interface{}) error
-    
-    // Metadata
-    Category() string
-    Tags() []string
-    Dependencies() []string
-}
-```
+- Identity methods (Name, Description, Version)
+- Execute method with input/output
+- Schema validation methods
+- Metadata methods (Category, Tags, Dependencies)
 
 ### PonchoFlow Interface
-
 **Purpose:** Unified interface for workflows
-
-```go
-type PonchoFlow interface {
-    // Identity
-    Name() string
-    Description() string
-    Version() string
-    
-    // Execution
-    Execute(ctx context.Context, input interface{}) (interface{}, error)
-    ExecuteStreaming(ctx context.Context, input interface{}, callback PonchoStreamCallback) error
-    
-    // Schema
-    InputSchema() map[string]interface{}
-    OutputSchema() map[string]interface{}
-    
-    // Metadata
-    Category() string
-    Tags() []string
-    Dependencies() []string
-}
-```
+- Identity methods (Name, Description, Version)
+- Execute/ExecuteStreaming methods
+- Schema validation methods
+- Metadata methods (Category, Tags, Dependencies)
 
 ## Configuration Architecture
 
@@ -478,44 +422,14 @@ Request → Framework.ExecuteFlow()
 
 ## Performance Considerations
 
-### 1. Connection Pooling
-- HTTP clients use connection pools
-- MaxIdleConns: 100
-- IdleConnTimeout: 90s
-
-### 2. Object Pooling
-- Message and content part pooling
-- Reduces GC pressure
-- Improves throughput
-
-### 3. Caching Strategy
-- Multi-level caching (L1: memory, L2: Redis)
-- Cache key based on request hash
-- Configurable TTL per component
-
-### 4. Concurrency
-- Thread-safe registries with RWMutex
-- Concurrent request handling
-- Rate limiting per provider
+- **Connection Pooling**: HTTP клиенты с пулами соединений
+- **Object Pooling**: Снижение GC压力 через pooling
+- **Caching**: Многоуровневое (L1: memory, L2: Redis)
+- **Concurrency**: Thread-safe регистры с RWMutex
 
 ## Security Considerations
 
-1. **API Key Management**
-   - Stored in environment variables
-   - Never logged or exposed
-   - Encrypted in transit
-
-2. **Input Validation**
-   - All inputs validated against JSON schema
-   - Protection against injection attacks
-   - Size limits enforced
-
-3. **Rate Limiting**
-   - Per-model rate limits
-   - Per-tool rate limits
-   - Exponential backoff for failures
-
-4. **Audit Logging**
-   - All requests logged
-   - Sensitive data masked
-   - Compliance with GDPR requirements
+- **API Key Management**: Environment variables, шифрование при передаче
+- **Input Validation**: JSON schema валидация, защита от injection
+- **Rate Limiting**: Per-model/tool лимиты с exponential backoff
+- **Audit Logging**: Все запросы с маскировкой чувствительных данных

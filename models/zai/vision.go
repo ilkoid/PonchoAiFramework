@@ -1,14 +1,9 @@
 package zai
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"image"
-	"image/jpeg"
-	"image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -18,17 +13,60 @@ import (
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
 )
 
-// VisionProcessor handles image processing and vision-specific operations
+// VisionProcessor handles vision-specific functionality for Z.AI GLM models
 type VisionProcessor struct {
-	client *GLMClient
+	model  *ZAIModel
 	logger interfaces.Logger
-	config *ImageProcessingConfig
+	config *VisionConfig
+}
+
+// VisionConfig represents configuration for vision processing
+type VisionConfig struct {
+	MaxImageSize     int           `json:"max_image_size"`
+	SupportedFormats []string      `json:"supported_formats"`
+	DefaultQuality   string        `json:"default_quality"`
+	DefaultDetail    string        `json:"default_detail"`
+	Timeout          time.Duration `json:"timeout"`
+	EnableCaching    bool          `json:"enable_caching"`
+	CacheTTL         time.Duration `json:"cache_ttl"`
+}
+
+// FashionAnalysis represents the result of fashion image analysis
+type FashionAnalysis struct {
+	Description   string                 `json:"description"`
+	ClothingItems []ClothingItem         `json:"clothing_items"`
+	Colors        []string               `json:"colors"`
+	Style         string                 `json:"style"`
+	Season        string                 `json:"season"`
+	Materials     []string               `json:"materials"`
+	Accessories   []string               `json:"accessories"`
+	Confidence    float64                `json:"confidence"`
+	Metadata      map[string]interface{} `json:"metadata"`
+}
+
+// ClothingItem represents a detected clothing item
+type ClothingItem struct {
+	Type        string  `json:"type"`
+	Description string  `json:"description"`
+	Color       string  `json:"color"`
+	Material    string  `json:"material"`
+	Style       string  `json:"style"`
+	Position    string  `json:"position"`
+	Confidence  float64 `json:"confidence"`
 }
 
 // NewVisionProcessor creates a new vision processor
-func NewVisionProcessor(client *GLMClient, logger interfaces.Logger, config *ImageProcessingConfig) *VisionProcessor {
+func NewVisionProcessor(model *ZAIModel, logger interfaces.Logger, config *VisionConfig) *VisionProcessor {
 	if config == nil {
-		config = &DefaultImageProcessingConfig
+		config = &VisionConfig{
+			MaxImageSize:     ZAIVisionMaxImageSize,
+			SupportedFormats: []string{"image/jpeg", "image/png", "image/gif", "image/webp"},
+			DefaultQuality:   ZAIVisionQualityAuto,
+			DefaultDetail:    ZAIVisionDetailAuto,
+			Timeout:          30 * time.Second,
+			EnableCaching:    false,
+			CacheTTL:         time.Hour,
+		}
 	}
 
 	if logger == nil {
@@ -36,521 +74,379 @@ func NewVisionProcessor(client *GLMClient, logger interfaces.Logger, config *Ima
 	}
 
 	return &VisionProcessor{
-		client: client,
+		model:  model,
 		logger: logger,
 		config: config,
 	}
 }
 
-// ProcessImage processes an image URL and returns base64 encoded data
-func (vp *VisionProcessor) ProcessImage(ctx context.Context, imageURL string) (*ProcessedImageData, error) {
-	// Validate URL
-	if imageURL == "" {
-		return nil, fmt.Errorf("image URL cannot be empty")
+// AnalyzeFashionImage analyzes a fashion image and returns detailed analysis
+func (vp *VisionProcessor) AnalyzeFashionImage(ctx context.Context, imageURL string) (*FashionAnalysis, error) {
+	vp.logger.Debug("Starting fashion image analysis",
+		"image_url", imageURL,
+		"timeout", vp.config.Timeout)
+
+	// Validate image URL
+	if err := vp.validateImageURL(imageURL); err != nil {
+		return nil, fmt.Errorf("invalid image URL: %w", err)
 	}
 
-	// Check if it's already a base64 data URL
-	if strings.HasPrefix(imageURL, "data:image/") {
-		return vp.processBase64Image(imageURL)
-	}
-
-	// Download image from URL
-	imageData, contentType, err := vp.downloadImage(ctx, imageURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download image: %w", err)
-	}
-
-	// Process and optimize image
-	optimizedData, err := vp.optimizeImage(imageData, contentType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to optimize image: %w", err)
-	}
-
-	// Encode to base64
-	base64Data := base64.StdEncoding.EncodeToString(optimizedData)
-
-	return &ProcessedImageData{
-		Base64Data:  base64Data,
-		ContentType: contentType,
-		Size:        len(optimizedData),
-		OriginalURL: imageURL,
-		ProcessedAt: time.Now(),
-	}, nil
-}
-
-// AnalyzeFashionImage performs fashion-specific analysis on an image
-func (vp *VisionProcessor) AnalyzeFashionImage(ctx context.Context, imageURL string, prompt string) (*FashionAnalysis, error) {
-	if !vp.config.EnableAnalysis {
-		return nil, fmt.Errorf("fashion analysis is disabled")
-	}
-
-	// Process the image
-	imageData, err := vp.ProcessImage(ctx, imageURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process image: %w", err)
-	}
-
-	// Create fashion-specific prompt
-	fashionPrompt := vp.buildFashionPrompt(prompt)
-
-	// Create GLM request with vision
-	req := &GLMRequest{
-		Model: GLMVisionModel,
-		Messages: []GLMMessage{
+	// Create vision request
+	req := &interfaces.PonchoModelRequest{
+		Model: vp.model.Name(),
+		Messages: []*interfaces.PonchoMessage{
 			{
-				Role: "user",
-				Content: []GLMContentPart{
+				Role: interfaces.PonchoRoleUser,
+				Content: []*interfaces.PonchoContentPart{
 					{
-						Type: GLMContentTypeImageURL,
-						ImageURL: &GLMImageURL{
-							URL: fmt.Sprintf("data:%s;base64,%s", imageData.ContentType, imageData.Base64Data),
-						},
+						Type: interfaces.PonchoContentTypeText,
+						Text: ZAIFashionVisionPrompt,
 					},
 					{
-						Type: GLMContentTypeText,
-						Text: fashionPrompt,
+						Type: interfaces.PonchoContentTypeMedia,
+						Media: &interfaces.PonchoMediaPart{
+							URL:      imageURL,
+							MimeType: "image/jpeg", // Default, should be detected
+						},
 					},
 				},
 			},
 		},
-		MaxTokens:   &vp.client.config.MaxTokens,
-		Temperature: &vp.client.config.Temperature,
-		Thinking: &GLMThinking{
-			Type: GLMThinkingEnabled,
-		},
+		MaxTokens:   intPtr(1000),
+		Temperature: float32Ptr(0.3), // Lower temperature for more consistent analysis
 	}
 
-	// Call GLM API
-	response, err := vp.client.CreateChatCompletion(ctx, req)
+	// Generate response
+	resp, err := vp.model.Generate(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze image: %w", err)
 	}
 
-	if len(response.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	// Parse fashion analysis from response
-	contentStr, ok := response.Choices[0].Message.Content.(string)
-	if !ok {
-		return nil, fmt.Errorf("message content is not a string")
-	}
-
-	analysis, err := vp.parseFashionAnalysis(contentStr)
+	// Parse fashion analysis
+	analysis, err := vp.parseFashionAnalysis(resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse fashion analysis: %w", err)
 	}
 
-	// Add metadata
-	analysis.Confidence = vp.calculateConfidence(contentStr)
-	analysis.Coordinates = vp.extractCoordinates(contentStr)
+	vp.logger.Info("Fashion image analysis completed",
+		"clothing_items_count", len(analysis.ClothingItems),
+		"confidence", analysis.Confidence,
+		"style", analysis.Style)
 
 	return analysis, nil
 }
 
-// ExtractProductFeatures extracts specific product features from an image
-func (vp *VisionProcessor) ExtractProductFeatures(ctx context.Context, imageURL string, features []string) (map[string]interface{}, error) {
-	if !vp.config.EnableAnalysis {
-		return nil, fmt.Errorf("feature extraction is disabled")
+// AnalyzeFashionImageFromBase64 analyzes a fashion image from base64 data
+func (vp *VisionProcessor) AnalyzeFashionImageFromBase64(ctx context.Context, base64Data string, mimeType string) (*FashionAnalysis, error) {
+	vp.logger.Debug("Starting fashion image analysis from base64",
+		"mime_type", mimeType,
+		"data_size", len(base64Data),
+		"timeout", vp.config.Timeout)
+
+	// Validate base64 data
+	if err := vp.validateBase64Image(base64Data, mimeType); err != nil {
+		return nil, fmt.Errorf("invalid base64 image data: %w", err)
 	}
 
-	// Process the image
-	imageData, err := vp.ProcessImage(ctx, imageURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process image: %w", err)
-	}
+	// Create data URL
+	dataURL := fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data)
 
-	// Build feature extraction prompt
-	prompt := vp.buildFeatureExtractionPrompt(features)
-
-	// Create GLM request
-	req := &GLMRequest{
-		Model: GLMVisionModel,
-		Messages: []GLMMessage{
+	// Create vision request
+	req := &interfaces.PonchoModelRequest{
+		Model: vp.model.Name(),
+		Messages: []*interfaces.PonchoMessage{
 			{
-				Role: "user",
-				Content: []GLMContentPart{
+				Role: interfaces.PonchoRoleUser,
+				Content: []*interfaces.PonchoContentPart{
 					{
-						Type: GLMContentTypeImageURL,
-						ImageURL: &GLMImageURL{
-							URL: fmt.Sprintf("data:%s;base64,%s", imageData.ContentType, imageData.Base64Data),
-						},
+						Type: interfaces.PonchoContentTypeText,
+						Text: ZAIFashionVisionPrompt,
 					},
 					{
-						Type: GLMContentTypeText,
-						Text: prompt,
+						Type: interfaces.PonchoContentTypeMedia,
+						Media: &interfaces.PonchoMediaPart{
+							URL:      dataURL,
+							MimeType: mimeType,
+						},
 					},
 				},
 			},
 		},
-		MaxTokens:   &vp.client.config.MaxTokens,
-		Temperature: &vp.client.config.Temperature,
-		Thinking: &GLMThinking{
-			Type: GLMThinkingEnabled,
-		},
+		MaxTokens:   intPtr(1000),
+		Temperature: float32Ptr(0.3),
 	}
 
-	// Call GLM API
-	response, err := vp.client.CreateChatCompletion(ctx, req)
+	// Generate response
+	resp, err := vp.model.Generate(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze image: %w", err)
+	}
+
+	// Parse fashion analysis
+	analysis, err := vp.parseFashionAnalysis(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse fashion analysis: %w", err)
+	}
+
+	vp.logger.Info("Fashion image analysis from base64 completed",
+		"clothing_items_count", len(analysis.ClothingItems),
+		"confidence", analysis.Confidence,
+		"style", analysis.Style)
+
+	return analysis, nil
+}
+
+// ExtractImageFeatures extracts general features from an image
+func (vp *VisionProcessor) ExtractImageFeatures(ctx context.Context, imageURL string) (*FashionAnalysis, error) {
+	vp.logger.Debug("Starting image feature extraction",
+		"image_url", imageURL,
+		"timeout", vp.config.Timeout)
+
+	// Validate image URL
+	if err := vp.validateImageURL(imageURL); err != nil {
+		return nil, fmt.Errorf("invalid image URL: %w", err)
+	}
+
+	// Create general vision request
+	prompt := "Analyze this image in detail. Describe the main objects, colors, composition, and any notable features. Provide a comprehensive description suitable for cataloging and search purposes."
+
+	req := &interfaces.PonchoModelRequest{
+		Model: vp.model.Name(),
+		Messages: []*interfaces.PonchoMessage{
+			{
+				Role: interfaces.PonchoRoleUser,
+				Content: []*interfaces.PonchoContentPart{
+					{
+						Type: interfaces.PonchoContentTypeText,
+						Text: prompt,
+					},
+					{
+						Type: interfaces.PonchoContentTypeMedia,
+						Media: &interfaces.PonchoMediaPart{
+							URL:      imageURL,
+							MimeType: "image/jpeg",
+						},
+					},
+				},
+			},
+		},
+		MaxTokens:   intPtr(800),
+		Temperature: float32Ptr(0.5),
+	}
+
+	// Generate response
+	resp, err := vp.model.Generate(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract features: %w", err)
 	}
 
-	if len(response.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
+	// Create basic analysis from description
+	analysis := &FashionAnalysis{
+		Description: resp.Message.Content[0].Text,
+		Confidence:  0.8, // Default confidence
+		Metadata: map[string]interface{}{
+			"analysis_type": "general_features",
+			"model":         vp.model.Name(),
+			"timestamp":     time.Now().Unix(),
+		},
 	}
 
-	// Parse features
-	contentStr, ok := response.Choices[0].Message.Content.(string)
-	if !ok {
-		return nil, fmt.Errorf("message content is not a string")
-	}
+	vp.logger.Info("Image feature extraction completed",
+		"description_length", len(analysis.Description))
 
-	featuresMap, err := vp.parseFeatures(contentStr, features)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse features: %w", err)
-	}
-
-	return featuresMap, nil
+	return analysis, nil
 }
 
-// ProcessedImageData represents processed image information
-type ProcessedImageData struct {
-	Base64Data  string    `json:"base64_data"`
-	ContentType string    `json:"content_type"`
-	Size        int       `json:"size"`
-	OriginalURL string    `json:"original_url"`
-	ProcessedAt time.Time `json:"processed_at"`
+// DownloadAndAnalyzeImage downloads an image from URL and analyzes it
+func (vp *VisionProcessor) DownloadAndAnalyzeImage(ctx context.Context, imageURL string) (*FashionAnalysis, error) {
+	vp.logger.Debug("Downloading and analyzing image",
+		"image_url", imageURL,
+		"timeout", vp.config.Timeout)
+
+	// Download image
+	imageData, mimeType, err := vp.downloadImage(ctx, imageURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download image: %w", err)
+	}
+
+	// Convert to base64
+	base64Data := base64.StdEncoding.EncodeToString(imageData)
+
+	// Analyze from base64
+	return vp.AnalyzeFashionImageFromBase64(ctx, base64Data, mimeType)
+}
+
+// Helper methods
+
+// validateImageURL validates an image URL
+func (vp *VisionProcessor) validateImageURL(imageURL string) error {
+	if imageURL == "" {
+		return fmt.Errorf("image URL cannot be empty")
+	}
+
+	// Check if it's a valid URL
+	parsedURL, err := url.Parse(imageURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL format: %w", err)
+	}
+
+	// Check scheme
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" && !strings.HasPrefix(imageURL, "data:") {
+		return fmt.Errorf("unsupported URL scheme: %s", parsedURL.Scheme)
+	}
+
+	return nil
+}
+
+// validateBase64Image validates base64 image data
+func (vp *VisionProcessor) validateBase64Image(base64Data string, mimeType string) error {
+	if base64Data == "" {
+		return fmt.Errorf("base64 data cannot be empty")
+	}
+
+	if mimeType == "" {
+		return fmt.Errorf("mime type cannot be empty")
+	}
+
+	// Check if mime type is supported
+	supported := false
+	for _, format := range vp.config.SupportedFormats {
+		if format == mimeType {
+			supported = true
+			break
+		}
+	}
+
+	if !supported {
+		return fmt.Errorf("unsupported mime type: %s", mimeType)
+	}
+
+	// Decode base64 to validate
+	decoded, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return fmt.Errorf("invalid base64 data: %w", err)
+	}
+
+	// Check size
+	if len(decoded) > vp.config.MaxImageSize {
+		return fmt.Errorf("image size (%d bytes) exceeds maximum (%d bytes)", len(decoded), vp.config.MaxImageSize)
+	}
+
+	return nil
 }
 
 // downloadImage downloads an image from URL
 func (vp *VisionProcessor) downloadImage(ctx context.Context, imageURL string) ([]byte, string, error) {
-	// Validate URL
-	parsedURL, err := url.Parse(imageURL)
-	if err != nil {
-		return nil, "", fmt.Errorf("invalid image URL: %w", err)
-	}
+	// Create HTTP request with timeout
+	reqCtx, cancel := context.WithTimeout(ctx, vp.config.Timeout)
+	defer cancel()
 
-	if !strings.HasPrefix(parsedURL.Scheme, "http") {
-		return nil, "", fmt.Errorf("unsupported URL scheme: %s", parsedURL.Scheme)
-	}
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "GET", imageURL, nil)
+	req, err := http.NewRequestWithContext(reqCtx, "GET", imageURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set user agent
-	req.Header.Set("User-Agent", "PonchoFramework/1.0")
-
-	// Send request
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
+	// Make request
+	client := &http.Client{Timeout: vp.config.Timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download image: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check response
+	// Check status code
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("failed to download image: HTTP %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("HTTP error: %d", resp.StatusCode)
 	}
 
-	// Read data
-	data, err := io.ReadAll(resp.Body)
+	// Get content type
+	mimeType := resp.Header.Get("Content-Type")
+	if mimeType == "" {
+		mimeType = "image/jpeg" // Default
+	}
+
+	// Read image data
+	imageData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to read image data: %w", err)
 	}
 
-	// Get content type
-	contentType := resp.Header.Get("Content-Type")
-	if contentType == "" {
-		// Try to detect from data
-		contentType = http.DetectContentType(data)
+	// Validate size
+	if len(imageData) > vp.config.MaxImageSize {
+		return nil, "", fmt.Errorf("image size (%d bytes) exceeds maximum (%d bytes)", len(imageData), vp.config.MaxImageSize)
 	}
 
-	// Validate content type
-	if !strings.HasPrefix(contentType, "image/") {
-		return nil, "", fmt.Errorf("invalid content type: %s", contentType)
-	}
-
-	return data, contentType, nil
+	return imageData, mimeType, nil
 }
 
-// processBase64Image processes an already base64 encoded image
-func (vp *VisionProcessor) processBase64Image(dataURL string) (*ProcessedImageData, error) {
-	// Parse data URL
-	parts := strings.SplitN(dataURL, ",", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid data URL format")
+// parseFashionAnalysis parses the response from fashion analysis
+func (vp *VisionProcessor) parseFashionAnalysis(resp *interfaces.PonchoModelResponse) (*FashionAnalysis, error) {
+	if resp == nil || resp.Message == nil || len(resp.Message.Content) == 0 {
+		return nil, fmt.Errorf("empty response")
 	}
 
-	// Extract content type
-	header := parts[0]
-	if !strings.HasPrefix(header, "data:image/") {
-		return nil, fmt.Errorf("invalid data URL header")
-	}
-
-	contentType := strings.TrimPrefix(header, "data:")
-	if semicolonIndex := strings.Index(contentType, ";"); semicolonIndex != -1 {
-		contentType = contentType[:semicolonIndex]
-	}
-
-	// Decode base64
-	data, err := base64.StdEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64 data: %w", err)
-	}
-
-	return &ProcessedImageData{
-		Base64Data:  parts[1],
-		ContentType: contentType,
-		Size:        len(data),
-		OriginalURL: dataURL,
-		ProcessedAt: time.Now(),
-	}, nil
-}
-
-// optimizeImage optimizes image for API usage
-func (vp *VisionProcessor) optimizeImage(data []byte, contentType string) ([]byte, error) {
-	// Check size limit
-	if int64(len(data)) <= vp.config.MaxSizeBytes {
-		return data, nil
-	}
-
-	// Decode image
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return data, err // Return original if decode fails
-	}
-
-	// Resize if needed
-	bounds := img.Bounds()
-	if bounds.Dx() <= vp.config.MaxWidth && bounds.Dy() <= vp.config.MaxHeight {
-		return data, nil
-	}
-
-	// Calculate new dimensions
-	newWidth, newHeight := vp.calculateDimensions(bounds.Dx(), bounds.Dy())
-
-	// Create new image
-	newImg := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
-
-	// Simple resize (would use better library in production)
-	// This is a placeholder - in production use a proper image resizing library
-	for y := 0; y < newHeight; y++ {
-		for x := 0; x < newWidth; x++ {
-			srcX := x * bounds.Dx() / newWidth
-			srcY := y * bounds.Dy() / newHeight
-			newImg.Set(x, y, img.At(srcX, srcY))
+	// Get text content
+	var textContent string
+	for _, part := range resp.Message.Content {
+		if part.Type == interfaces.PonchoContentTypeText {
+			textContent += part.Text
 		}
 	}
 
-	// Encode back to bytes
-	var buf bytes.Buffer
-	switch contentType {
-	case "image/png":
-		err = png.Encode(&buf, newImg)
-	case "image/jpeg":
-		err = jpeg.Encode(&buf, newImg, &jpeg.Options{Quality: vp.config.Quality})
-	default:
-		err = jpeg.Encode(&buf, newImg, &jpeg.Options{Quality: vp.config.Quality})
+	if textContent == "" {
+		return nil, fmt.Errorf("no text content in response")
 	}
 
-	if err != nil {
-		return data, err // Return original if encode fails
-	}
-
-	return buf.Bytes(), nil
-}
-
-// calculateDimensions calculates new dimensions maintaining aspect ratio
-func (vp *VisionProcessor) calculateDimensions(width, height int) (int, int) {
-	if width <= vp.config.MaxWidth && height <= vp.config.MaxHeight {
-		return width, height
-	}
-
-	ratio := float64(width) / float64(height)
-	if width > height {
-		newWidth := vp.config.MaxWidth
-		newHeight := int(float64(newWidth) / ratio)
-		return newWidth, newHeight
-	} else {
-		newHeight := vp.config.MaxHeight
-		newWidth := int(float64(newHeight) * ratio)
-		return newWidth, newHeight
-	}
-}
-
-// buildFashionPrompt builds a fashion-specific analysis prompt
-func (vp *VisionProcessor) buildFashionPrompt(customPrompt string) string {
-	basePrompt := `You are a fashion expert specializing in clothing and accessory analysis. Analyze the provided fashion image and provide detailed information.
-
-Please analyze and describe:
-1. Item type and category (e.g., dress, shirt, pants, shoes, bag)
-2. Style (e.g., casual, formal, sporty, elegant)
-3. Materials visible (e.g., cotton, silk, denim, leather)
-4. Color palette and dominant colors
-5. Season suitability (spring, summer, fall, winter, all-season)
-6. Target gender (men, women, unisex)
-7. Notable features and details
-8. Occasion suitability
-
-If coordinates are requested, provide them in [[xmin,ymin,xmax,ymax]] format.`
-
-	if customPrompt != "" {
-		return basePrompt + "\n\nAdditional specific request: " + customPrompt
-	}
-
-	return basePrompt
-}
-
-// buildFeatureExtractionPrompt builds a prompt for specific feature extraction
-func (vp *VisionProcessor) buildFeatureExtractionPrompt(features []string) string {
-	featureList := strings.Join(features, ", ")
-	return fmt.Sprintf(`Extract the following specific features from the fashion image: %s
-
-Please provide the results in JSON format with the feature names as keys and the extracted values as values. Be specific and accurate in your analysis.`, featureList)
-}
-
-// parseFashionAnalysis parses fashion analysis from response text
-func (vp *VisionProcessor) parseFashionAnalysis(responseText string) (*FashionAnalysis, error) {
-	// This is a simplified parser - in production, use more sophisticated parsing
+	// Create basic analysis - in a real implementation, you might want to use
+	// structured output or JSON parsing for more reliable results
 	analysis := &FashionAnalysis{
-		Features: make(map[string]interface{}),
+		Description:   textContent,
+		ClothingItems: []ClothingItem{},
+		Colors:        []string{},
+		Style:         "unknown",
+		Season:        "unknown",
+		Materials:     []string{},
+		Accessories:   []string{},
+		Confidence:    0.8, // Default confidence
+		Metadata: map[string]interface{}{
+			"analysis_type": "fashion",
+			"model":         vp.model.Name(),
+			"timestamp":     time.Now().Unix(),
+			"raw_response":  textContent,
+		},
 	}
 
-	// Extract basic information (simplified)
-	lines := strings.Split(responseText, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(strings.ToLower(line), "category") {
-			analysis.Category = vp.extractValue(line)
-		} else if strings.Contains(strings.ToLower(line), "style") {
-			analysis.Style = vp.extractValue(line)
-		} else if strings.Contains(strings.ToLower(line), "material") {
-			analysis.Materials = vp.extractList(line)
-		} else if strings.Contains(strings.ToLower(line), "color") {
-			analysis.Colors = vp.extractList(line)
-		} else if strings.Contains(strings.ToLower(line), "season") {
-			analysis.Season = vp.extractValue(line)
-		} else if strings.Contains(strings.ToLower(line), "gender") {
-			analysis.Gender = vp.extractValue(line)
-		}
-	}
-
-	// Store full description
-	analysis.Description = responseText
+	// TODO: Implement more sophisticated parsing for structured fashion data
+	// This could involve:
+	// 1. Using JSON mode in the API request
+	// 2. Using regex patterns to extract structured data
+	// 3. Using additional AI calls to parse the response
 
 	return analysis, nil
 }
 
-// parseFeatures parses specific features from response
-func (vp *VisionProcessor) parseFeatures(responseText string, requestedFeatures []string) (map[string]interface{}, error) {
-	features := make(map[string]interface{})
+// Helper functions for pointers
 
-	// Try to parse as JSON first
-	var jsonResult map[string]interface{}
-	if err := json.Unmarshal([]byte(responseText), &jsonResult); err == nil {
-		return jsonResult, nil
-	}
-
-	// Fallback to text parsing
-	lines := strings.Split(responseText, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		for _, feature := range requestedFeatures {
-			if strings.Contains(strings.ToLower(line), strings.ToLower(feature)) {
-				features[feature] = vp.extractValue(line)
-			}
-		}
-	}
-
-	return features, nil
+func intPtr(i int) *int {
+	return &i
 }
 
-// extractValue extracts a value from a line of text
-func (vp *VisionProcessor) extractValue(line string) string {
-	// Look for patterns like "Category: dress" or "Category - dress"
-	parts := strings.SplitN(line, ":", 2)
-	if len(parts) == 2 {
-		return strings.TrimSpace(parts[1])
-	}
-
-	parts = strings.SplitN(line, "-", 2)
-	if len(parts) == 2 {
-		return strings.TrimSpace(parts[1])
-	}
-
-	return line
+func float32Ptr(f float32) *float32 {
+	return &f
 }
 
-// extractList extracts a list of values from a line of text
-func (vp *VisionProcessor) extractList(line string) []string {
-	value := vp.extractValue(line)
-	// Split by common separators
-	separators := []string{",", ";", "/", "|"}
-
-	for _, sep := range separators {
-		if strings.Contains(value, sep) {
-			items := strings.Split(value, sep)
-			result := make([]string, len(items))
-			for i, item := range items {
-				result[i] = strings.TrimSpace(item)
-			}
-			return result
-		}
-	}
-
-	return []string{value}
+// GetConfig returns the current vision configuration
+func (vp *VisionProcessor) GetConfig() *VisionConfig {
+	return vp.config
 }
 
-// calculateConfidence calculates confidence score from response
-func (vp *VisionProcessor) calculateConfidence(responseText string) float64 {
-	// Simple heuristic based on response length and detail
-	words := strings.Fields(responseText)
-	if len(words) < 10 {
-		return 0.3
-	} else if len(words) < 50 {
-		return 0.7
-	} else {
-		return 0.9
+// UpdateConfig updates the vision configuration
+func (vp *VisionProcessor) UpdateConfig(config *VisionConfig) {
+	if config != nil {
+		vp.config = config
+		vp.logger.Info("Vision processor configuration updated",
+			"max_image_size", config.MaxImageSize,
+			"default_quality", config.DefaultQuality,
+			"default_detail", config.DefaultDetail)
 	}
-}
-
-// extractCoordinates extracts bounding box coordinates from response
-func (vp *VisionProcessor) extractCoordinates(responseText string) []BoundingCoordinates {
-	var coords []BoundingCoordinates
-
-	// Look for coordinate patterns [[xmin,ymin,xmax,ymax]]
-	pattern := "[["
-	start := strings.Index(responseText, pattern)
-	for start != -1 {
-		end := strings.Index(responseText[start:], "]]")
-		if end == -1 {
-			break
-		}
-		end += start + 2
-
-		coordStr := responseText[start+2 : end-2]
-		values := strings.Split(coordStr, ",")
-		if len(values) == 4 {
-			coord := BoundingCoordinates{
-				Label: "detected_object",
-			}
-			fmt.Sscanf(coordStr, "%f,%f,%f,%f", &coord.XMin, &coord.YMin, &coord.XMax, &coord.YMax)
-			coords = append(coords, coord)
-		}
-
-		// Look for next occurrence
-		start = strings.Index(responseText[end:], pattern)
-		if start != -1 {
-			start += end
-		}
-	}
-
-	return coords
 }

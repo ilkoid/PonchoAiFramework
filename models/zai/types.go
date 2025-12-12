@@ -2,217 +2,234 @@ package zai
 
 import "time"
 
-// GLM-specific types for Z.AI API integration
+// Z.AI-specific types for API integration
 
-// GLMMessage represents a message in GLM API format
-type GLMMessage struct {
+// ZAIMessage represents a message in Z.AI API format
+type ZAIMessage struct {
 	Role      string        `json:"role"`
-	Content   interface{}   `json:"content"` // string or []GLMContentPart
+	Content   interface{}   `json:"content"` // Can be string or []ZAIContentPart
 	Name      *string       `json:"name,omitempty"`
-	ToolCalls []GLMToolCall `json:"tool_calls,omitempty"`
+	ToolCalls []ZAIToolCall `json:"tool_calls,omitempty"`
 }
 
-// GLMContentPart represents a content part in multimodal messages
-type GLMContentPart struct {
-	Type     string       `json:"type"` // "text", "image_url"
+// ZAIContentPart represents a content part in Z.AI API format
+type ZAIContentPart struct {
+	Type     string       `json:"type"` // "text", "image_url", "media"
 	Text     string       `json:"text,omitempty"`
-	ImageURL *GLMImageURL `json:"image_url,omitempty"`
+	ImageURL *ZAIImageURL `json:"image_url,omitempty"`
+	Media    *ZAIMedia    `json:"media,omitempty"`
 }
 
-// GLMImageURL represents an image URL in GLM format
-type GLMImageURL struct {
-	URL string `json:"url"`
+// ZAIImageURL represents an image URL in Z.AI API format
+type ZAIImageURL struct {
+	URL    string `json:"url"`
+	Detail string `json:"detail,omitempty"` // "auto", "low", "high"
 }
 
-// GLMToolCall represents a tool call in GLM API format
-type GLMToolCall struct {
+// ZAIMedia represents media content in Z.AI API format
+type ZAIMedia struct {
+	URL      string `json:"url"`
+	MimeType string `json:"mime_type,omitempty"`
+	Data     string `json:"data,omitempty"` // Base64 encoded data
+}
+
+// ZAIToolCall represents a tool call in Z.AI API format
+type ZAIToolCall struct {
 	ID       string          `json:"id"`
 	Type     string          `json:"type"` // always "function"
-	Function GLMFunctionCall `json:"function"`
+	Function ZAIFunctionCall `json:"function"`
 }
 
-// GLMFunctionCall represents a function call in GLM API format
-type GLMFunctionCall struct {
+// ZAIFunctionCall represents a function call in Z.AI API format
+type ZAIFunctionCall struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
 
-// GLMTool represents a tool definition in GLM API format
-type GLMTool struct {
+// ZAITool represents a tool definition in Z.AI API format
+type ZAITool struct {
 	Type     string          `json:"type"` // always "function"
-	Function GLMToolFunction `json:"function"`
+	Function ZAIToolFunction `json:"function"`
 }
 
-// GLMToolFunction represents a tool function definition
-type GLMToolFunction struct {
+// ZAIToolFunction represents a tool function definition
+type ZAIToolFunction struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	Parameters  map[string]interface{} `json:"parameters"`
 }
 
-// GLMThinking represents thinking mode configuration (GLM-specific)
-type GLMThinking struct {
-	Type string `json:"type"` // "enabled" or "disabled"
+// ZAIRequest represents a request to Z.AI API
+type ZAIRequest struct {
+	Model            string             `json:"model"`
+	Messages         []ZAIMessage       `json:"messages"`
+	Temperature      *float32           `json:"temperature,omitempty"`
+	MaxTokens        *int               `json:"max_tokens,omitempty"`
+	Stream           bool               `json:"stream,omitempty"`
+	Tools            []ZAITool          `json:"tools,omitempty"`
+	ToolChoice       interface{}        `json:"tool_choice,omitempty"` // "none", "auto", or specific tool
+	TopP             *float32           `json:"top_p,omitempty"`
+	FrequencyPenalty *float32           `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float32           `json:"presence_penalty,omitempty"`
+	Stop             interface{}        `json:"stop,omitempty"` // string or []string
+	ResponseFormat   *ZAIResponseFormat `json:"response_format,omitempty"`
+	LogProbs         bool               `json:"logprobs,omitempty"`
+	TopLogProbs      *int               `json:"top_logprobs,omitempty"`
 }
 
-// GLMRequest represents a request to GLM API
-type GLMRequest struct {
-	Model            string       `json:"model"`
-	Messages         []GLMMessage `json:"messages"`
-	Temperature      *float32     `json:"temperature,omitempty"`
-	MaxTokens        *int         `json:"max_tokens,omitempty"`
-	Stream           bool         `json:"stream,omitempty"`
-	Tools            []GLMTool    `json:"tools,omitempty"`
-	ToolChoice       interface{}  `json:"tool_choice,omitempty"` // "none", "auto", or specific tool
-	TopP             *float32     `json:"top_p,omitempty"`
-	FrequencyPenalty *float32     `json:"frequency_penalty,omitempty"`
-	PresencePenalty  *float32     `json:"presence_penalty,omitempty"`
-	Stop             interface{}  `json:"stop,omitempty"` // string or []string
-	Thinking         *GLMThinking `json:"thinking,omitempty"`
+// ZAIResponseFormat represents response format configuration
+type ZAIResponseFormat struct {
+	Type string `json:"type"` // "text" or "json_object"
 }
 
-// GLMChoice represents a choice in GLM API response
-type GLMChoice struct {
-	Index        int        `json:"index"`
-	Message      GLMMessage `json:"message"`
-	FinishReason string     `json:"finish_reason"`
+// ZAIChoice represents a choice in Z.AI API response
+type ZAIChoice struct {
+	Index        int          `json:"index"`
+	Message      ZAIMessage   `json:"message"`
+	FinishReason string       `json:"finish_reason"`
+	LogProbs     *ZAILogProbs `json:"logprobs,omitempty"`
 }
 
-// GLMUsage represents token usage information
-type GLMUsage struct {
+// ZAILogProbs represents log probabilities in response
+type ZAILogProbs struct {
+	Content []ZAITokenLogProb `json:"content,omitempty"`
+}
+
+// ZAITokenLogProb represents token log probability information
+type ZAITokenLogProb struct {
+	Token       string          `json:"token"`
+	LogProb     float64         `json:"logprob"`
+	Bytes       []int           `json:"bytes,omitempty"`
+	TopLogProbs []ZAITopLogProb `json:"top_logprobs,omitempty"`
+}
+
+// ZAITopLogProb represents top log probability information
+type ZAITopLogProb struct {
+	Token   string  `json:"token"`
+	LogProb float64 `json:"logprob"`
+	Bytes   []int   `json:"bytes,omitempty"`
+}
+
+// ZAIUsage represents token usage information
+type ZAIUsage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// GLMResponse represents a response from GLM API
-type GLMResponse struct {
+// ZAIResponse represents a response from Z.AI API
+type ZAIResponse struct {
 	ID      string      `json:"id"`
 	Object  string      `json:"object"` // "chat.completion"
 	Created int64       `json:"created"`
 	Model   string      `json:"model"`
-	Choices []GLMChoice `json:"choices"`
-	Usage   GLMUsage    `json:"usage"`
+	Choices []ZAIChoice `json:"choices"`
+	Usage   ZAIUsage    `json:"usage"`
 }
 
-// GLMStreamChoice represents a choice in streaming response
-type GLMStreamChoice struct {
+// ZAIStreamChoice represents a choice in streaming response
+type ZAIStreamChoice struct {
 	Index        int            `json:"index"`
-	Delta        GLMStreamDelta `json:"delta"`
+	Delta        ZAIStreamDelta `json:"delta"`
 	FinishReason *string        `json:"finish_reason,omitempty"`
+	LogProbs     *ZAILogProbs   `json:"logprobs,omitempty"`
 }
 
-// GLMStreamDelta represents a delta in streaming response
-type GLMStreamDelta struct {
+// ZAIStreamDelta represents a delta in streaming response
+type ZAIStreamDelta struct {
 	Role      string        `json:"role,omitempty"`
 	Content   string        `json:"content,omitempty"`
-	ToolCalls []GLMToolCall `json:"tool_calls,omitempty"`
+	ToolCalls []ZAIToolCall `json:"tool_calls,omitempty"`
 }
 
-// GLMStreamResponse represents a streaming response from GLM API
-type GLMStreamResponse struct {
+// ZAIStreamResponse represents a streaming response from Z.AI API
+type ZAIStreamResponse struct {
 	ID      string            `json:"id"`
 	Object  string            `json:"object"` // "chat.completion.chunk"
 	Created int64             `json:"created"`
 	Model   string            `json:"model"`
-	Choices []GLMStreamChoice `json:"choices"`
-	Usage   *GLMUsage         `json:"usage,omitempty"`
+	Choices []ZAIStreamChoice `json:"choices"`
+	Usage   *ZAIUsage         `json:"usage,omitempty"`
 }
 
-// GLMError represents an error response from GLM API
-type GLMError struct {
-	Error GLMErrorDetail `json:"error"`
+// ZAIError represents an error response from Z.AI API
+type ZAIError struct {
+	Error ZAIErrorDetail `json:"error"`
 }
 
-// GLMErrorDetail represents error details
-type GLMErrorDetail struct {
+// ZAIErrorDetail represents error details
+type ZAIErrorDetail struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
 	Code    string `json:"code,omitempty"`
 }
 
-// GLMConfig represents GLM-specific configuration
-type GLMConfig struct {
-	BaseURL          string        `json:"base_url"`
-	APIKey           string        `json:"api_key"`
-	Model            string        `json:"model"`
-	MaxTokens        int           `json:"max_tokens"`
-	Temperature      float32       `json:"temperature"`
-	Timeout          time.Duration `json:"timeout"`
-	TopP             *float32      `json:"top_p,omitempty"`
-	FrequencyPenalty *float32      `json:"frequency_penalty,omitempty"`
-	PresencePenalty  *float32      `json:"presence_penalty,omitempty"`
-	Stop             interface{}   `json:"stop,omitempty"`
-	Thinking         *GLMThinking  `json:"thinking,omitempty"`
+// ZAIConfig represents Z.AI-specific configuration
+type ZAIConfig struct {
+	BaseURL          string             `json:"base_url"`
+	APIKey           string             `json:"api_key"`
+	Model            string             `json:"model"`
+	MaxTokens        int                `json:"max_tokens"`
+	Temperature      float32            `json:"temperature"`
+	Timeout          time.Duration      `json:"timeout"`
+	TopP             *float32           `json:"top_p,omitempty"`
+	FrequencyPenalty *float32           `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float32           `json:"presence_penalty,omitempty"`
+	Stop             interface{}        `json:"stop,omitempty"`
+	ResponseFormat   *ZAIResponseFormat `json:"response_format,omitempty"`
+	LogProbs         bool               `json:"logprobs,omitempty"`
+	TopLogProbs      *int               `json:"top_logprobs,omitempty"`
+	VisionConfig     *ZAIVisionConfig   `json:"vision_config,omitempty"`
 }
 
-// Constants for GLM API
+// ZAIVisionConfig represents vision-specific configuration
+type ZAIVisionConfig struct {
+	MaxImageSize   int      `json:"max_image_size"`  // Maximum image size in pixels
+	SupportedTypes []string `json:"supported_types"` // Supported image formats
+	Quality        string   `json:"quality"`         // "auto", "low", "high"
+	Detail         string   `json:"detail"`          // "auto", "low", "high"
+}
+
+// Constants for Z.AI API
 const (
-	GLMDefaultBaseURL = "https://api.z.ai/api/paas/v4"
-	GLMDefaultModel   = "glm-4.6"
-	GLMEndpoint       = "/chat/completions"
-	GLMVisionModel    = "glm-4.6v"
+	ZAIDefaultBaseURL = "https://api.z.ai/api/paas/v4"
+	ZAIDefaultModel   = "glm-4.6"
+	ZAIVisionModel    = "glm-4.6v"
+	ZAIEndpoint       = "/chat/completions"
 
 	// Finish reasons
-	GLMFinishReasonStop   = "stop"
-	GLMFinishReasonLength = "length"
-	GLMFinishReasonTool   = "tool_calls"
-	GLMFinishReasonError  = "error"
+	ZAIFinishReasonStop   = "stop"
+	ZAIFinishReasonLength = "length"
+	ZAIFinishReasonTool   = "tool_calls"
+	ZAIFinishReasonError  = "error"
+	ZAIFinishReasonFilter = "content_filter"
 
 	// Tool choices
-	GLMToolChoiceNone = "none"
-	GLMToolChoiceAuto = "auto"
+	ZAIToolChoiceNone     = "none"
+	ZAIToolChoiceAuto     = "auto"
+	ZAIToolChoiceRequired = "required"
+
+	// Response formats
+	ZAIResponseFormatText       = "text"
+	ZAIResponseFormatJSONObject = "json_object"
 
 	// Content types
-	GLMContentTypeText     = "text"
-	GLMContentTypeImageURL = "image_url"
+	ZAIContentTypeText     = "text"
+	ZAIContentTypeImageURL = "image_url"
+	ZAIContentTypeMedia    = "media"
 
-	// Thinking types
-	GLMThinkingEnabled  = "enabled"
-	GLMThinkingDisabled = "disabled"
+	// Vision configuration
+	ZAIVisionMaxImageSize = 10 * 1024 * 1024 // 10MB
+	ZAIVisionQualityAuto  = "auto"
+	ZAIVisionQualityLow   = "low"
+	ZAIVisionQualityHigh  = "high"
+	ZAIVisionDetailAuto   = "auto"
+	ZAIVisionDetailLow    = "low"
+	ZAIVisionDetailHigh   = "high"
+
+	// Supported image formats
+	ZAIVisionSupportedFormats = "image/jpeg,image/png,image/gif,image/webp"
+
+	// Fashion-specific constants
+	ZAIFashionVisionPrompt = "Analyze this fashion image in detail. Focus on clothing items, accessories, materials, colors, style, and fashion elements. Provide detailed descriptions suitable for fashion industry applications."
 )
-
-// Vision-specific types for fashion image analysis
-
-// FashionAnalysis represents the result of fashion image analysis
-type FashionAnalysis struct {
-	Description string                 `json:"description"`
-	Category    string                 `json:"category"`
-	Style       string                 `json:"style"`
-	Materials   []string               `json:"materials"`
-	Colors      []string               `json:"colors"`
-	Season      string                 `json:"season"`
-	Gender      string                 `json:"gender"`
-	Features    map[string]interface{} `json:"features"`
-	Coordinates []BoundingCoordinates  `json:"coordinates,omitempty"`
-	Confidence  float64                `json:"confidence"`
-}
-
-// BoundingCoordinates represents bounding box coordinates
-type BoundingCoordinates struct {
-	XMin  float64 `json:"xmin"`
-	YMin  float64 `json:"ymin"`
-	XMax  float64 `json:"xmax"`
-	YMax  float64 `json:"ymax"`
-	Label string  `json:"label,omitempty"`
-}
-
-// ImageProcessingConfig represents configuration for image processing
-type ImageProcessingConfig struct {
-	MaxWidth       int     `json:"max_width"`
-	MaxHeight      int     `json:"max_height"`
-	Quality        int     `json:"quality"`
-	MaxSizeBytes   int64   `json:"max_size_bytes"`
-	EnableAnalysis bool    `json:"enable_analysis"`
-	Confidence     float64 `json:"confidence_threshold"`
-}
-
-// Default image processing configuration
-var DefaultImageProcessingConfig = ImageProcessingConfig{
-	MaxWidth:       640,
-	MaxHeight:      480,
-	Quality:        90,
-	MaxSizeBytes:   90000, // 90KB
-	EnableAnalysis: true,
-	Confidence:     0.7,
-}

@@ -3,56 +3,161 @@
 
 # Models Configuration
 models:
-  # DeepSeek Chat Model
+  # DeepSeek Chat Model - Primary text generation model
   deepseek-chat:
     provider: "deepseek"
     model_name: "deepseek-chat"
     api_key: "${DEEPSEEK_API_KEY}"
+    base_url: "https://api.deepseek.com/v1"
     max_tokens: 4000
     temperature: 0.7
     timeout: 30s
+    retry:
+      max_attempts: 3
+      backoff: "exponential"
+      base_delay: 1s
+      max_delay: 30s
     supports:
       vision: false
       tools: true
       stream: true
       system: true
+      json_mode: true
     custom_params:
       top_p: 0.9
       frequency_penalty: 0.0
       presence_penalty: 0.0
+      response_format: "auto"
+      thinking: false
 
-  # Z.AI GLM Vision Model
+  # DeepSeek Coder Model - For code generation tasks
+  deepseek-coder:
+    provider: "deepseek"
+    model_name: "deepseek-coder"
+    api_key: "${DEEPSEEK_API_KEY}"
+    base_url: "https://api.deepseek.com/v1"
+    max_tokens: 8000
+    temperature: 0.1
+    timeout: 45s
+    retry:
+      max_attempts: 2
+      backoff: "linear"
+      base_delay: 2s
+      max_delay: 20s
+    supports:
+      vision: false
+      tools: true
+      stream: true
+      system: true
+      json_mode: true
+    custom_params:
+      top_p: 0.95
+      frequency_penalty: 0.0
+      presence_penalty: 0.0
+      response_format: "auto"
+
+  # Z.AI GLM Vision Model - For fashion image analysis
   glm-vision:
     provider: "zai"
     model_name: "glm-4.6v"
     api_key: "${ZAI_API_KEY}"
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
     max_tokens: 2000
     temperature: 0.5
     timeout: 60s
+    retry:
+      max_attempts: 2
+      backoff: "exponential"
+      base_delay: 2s
+      max_delay: 60s
     supports:
       vision: true
       tools: true
       stream: true
       system: true
+      json_mode: false
     custom_params:
       top_p: 0.8
       max_image_size: "10MB"
+      thinking:
+        type: "enabled"
+        budget_tokens: 1000
 
-  # Z.AI GLM Text Model
+  # Z.AI GLM Flash Vision Model - Faster vision processing
+  glm-vision-flash:
+    provider: "zai"
+    model_name: "glm-4.6v-flash"
+    api_key: "${ZAI_API_KEY}"
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
+    max_tokens: 1500
+    temperature: 0.3
+    timeout: 30s
+    retry:
+      max_attempts: 3
+      backoff: "exponential"
+      base_delay: 1s
+      max_delay: 30s
+    supports:
+      vision: true
+      tools: false
+      stream: true
+      system: true
+      json_mode: false
+    custom_params:
+      top_p: 0.7
+      max_image_size: "5MB"
+      thinking: "disabled"
+
+  # Z.AI GLM Text Model - Primary text generation
   glm-chat:
     provider: "zai"
     model_name: "glm-4.6"
     api_key: "${ZAI_API_KEY}"
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
     max_tokens: 3000
     temperature: 0.6
     timeout: 30s
+    retry:
+      max_attempts: 3
+      backoff: "exponential"
+      base_delay: 1s
+      max_delay: 30s
     supports:
       vision: false
       tools: true
       stream: true
       system: true
+      json_mode: true
     custom_params:
       top_p: 0.85
+      thinking:
+        type: "disabled"
+
+  # Z.AI GLM Long Context Model - For large document processing
+  glm-long:
+    provider: "zai"
+    model_name: "glm-4.6-long"
+    api_key: "${ZAI_API_KEY}"
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
+    max_tokens: 8000
+    temperature: 0.4
+    timeout: 60s
+    retry:
+      max_attempts: 2
+      backoff: "exponential"
+      base_delay: 3s
+      max_delay: 60s
+    supports:
+      vision: false
+      tools: true
+      stream: true
+      system: true
+      json_mode: true
+    custom_params:
+      top_p: 0.9
+      thinking:
+        type: "enabled"
+        budget_tokens: 2000
 
 # Tools Configuration
 tools:

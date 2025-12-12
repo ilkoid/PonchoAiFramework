@@ -1,307 +1,283 @@
 package deepseek
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
+	"github.com/ilkoid/PonchoAiFramework/models/common"
 )
 
-// DeepSeekClient represents an HTTP client for DeepSeek API
+// DeepSeekClient represents a client for DeepSeek API
 type DeepSeekClient struct {
-	httpClient *http.Client
-	config     *DeepSeekConfig
+	httpClient *common.HTTPClient
+	config     *common.CommonModelConfig
 	logger     interfaces.Logger
+	apiKey     string
+	baseURL    string
 }
 
-// NewDeepSeekClient creates a new DeepSeek HTTP client
-func NewDeepSeekClient(config *DeepSeekConfig, logger interfaces.Logger) *DeepSeekClient {
+// NewDeepSeekClient creates a new DeepSeek client
+func NewDeepSeekClient(config *common.CommonModelConfig, logger interfaces.Logger) (*DeepSeekClient, error) {
 	if config == nil {
-		config = &DeepSeekConfig{
-			BaseURL:     DeepSeekDefaultBaseURL,
-			Model:       DeepSeekDefaultModel,
-			MaxTokens:   4000,
-			Temperature: 0.7,
-			Timeout:     30 * time.Second,
-		}
+		return nil, fmt.Errorf("config cannot be nil")
 	}
 
 	if logger == nil {
 		logger = interfaces.NewDefaultLogger()
 	}
 
-	// Configure HTTP client with connection pooling and timeouts
-	httpClient := &http.Client{
-		Timeout: config.Timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 10,
-			IdleConnTimeout:     90 * time.Second,
-			TLSHandshakeTimeout: 10 * time.Second,
-		},
+	// Validate configuration
+	if err := validateConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
-	return &DeepSeekClient{
+	// Create HTTP client
+	httpConfig := &common.DefaultHTTPConfig
+	httpConfig.Timeout = config.Timeout
+	httpConfig.UserAgent = "PonchoFramework-DeepSeek/1.0"
+
+	retryConfig := common.DefaultRetryConfig
+	retryConfig.MaxAttempts = 3
+	retryConfig.BaseDelay = 1 * time.Second
+	retryConfig.MaxDelay = 30 * time.Second
+
+	httpClient, err := common.NewHTTPClient(httpConfig, retryConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
+	}
+
+	client := &DeepSeekClient{
 		httpClient: httpClient,
 		config:     config,
 		logger:     logger,
+		apiKey:     config.APIKey,
+		baseURL:    config.BaseURL,
 	}
+
+	// Use default base URL if not provided
+	if client.baseURL == "" {
+		client.baseURL = common.DeepSeekDefaultBaseURL
+	}
+
+	logger.Info("DeepSeek client created",
+		"model", config.Model,
+		"base_url", client.baseURL,
+		"timeout", config.Timeout)
+
+	return client, nil
 }
 
-// CreateChatCompletion creates a chat completion request
-func (c *DeepSeekClient) CreateChatCompletion(ctx context.Context, req *DeepSeekRequest) (*DeepSeekResponse, error) {
-	// Set default values
-	if req.Model == "" {
-		req.Model = c.config.Model
+// validateConfig validates DeepSeek configuration
+func validateConfig(config *common.CommonModelConfig) error {
+	if config.APIKey == "" {
+		return fmt.Errorf("API key is required")
 	}
 
-	// Prepare request
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	if config.Model == "" {
+		return fmt.Errorf("model name is required")
 	}
 
-	// Create HTTP request
-	url := c.config.BaseURL + DeepSeekEndpoint
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	if config.MaxTokens <= 0 {
+		return fmt.Errorf("max_tokens must be positive")
 	}
 
-	// Set headers
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.config.APIKey)
-	httpReq.Header.Set("User-Agent", "PonchoFramework/1.0")
-
-	c.logger.Debug("Sending request to DeepSeek API",
-		"url", url,
-		"model", req.Model,
-		"messages_count", len(req.Messages))
-
-	// Send request
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+	if config.Temperature < 0 || config.Temperature > 2 {
+		return fmt.Errorf("temperature must be between 0 and 2")
 	}
 
-	// Check for error status codes
-	if resp.StatusCode != http.StatusOK {
-		var apiErr DeepSeekError
-		if err := json.Unmarshal(body, &apiErr); err != nil {
-			return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
-		}
-		return nil, fmt.Errorf("API error: %s (type: %s, code: %s)",
-			apiErr.Error.Message, apiErr.Error.Type, apiErr.Error.Code)
-	}
-
-	// Parse successful response
-	var response DeepSeekResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	c.logger.Debug("Received response from DeepSeek API",
-		"id", response.ID,
-		"model", response.Model,
-		"choices_count", len(response.Choices),
-		"prompt_tokens", response.Usage.PromptTokens,
-		"completion_tokens", response.Usage.CompletionTokens)
-
-	return &response, nil
-}
-
-// CreateChatCompletionStream creates a streaming chat completion request
-func (c *DeepSeekClient) CreateChatCompletionStream(ctx context.Context, req *DeepSeekRequest, callback func(*DeepSeekStreamResponse) error) error {
-	// Set streaming mode
-	req.Stream = true
-
-	// Set default values
-	if req.Model == "" {
-		req.Model = c.config.Model
-	}
-
-	// Prepare request
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create HTTP request
-	url := c.config.BaseURL + DeepSeekEndpoint
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	// Set headers
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-	httpReq.Header.Set("Cache-Control", "no-cache")
-	httpReq.Header.Set("Authorization", "Bearer "+c.config.APIKey)
-	httpReq.Header.Set("User-Agent", "PonchoFramework/1.0")
-
-	c.logger.Debug("Sending streaming request to DeepSeek API",
-		"url", url,
-		"model", req.Model,
-		"messages_count", len(req.Messages))
-
-	// Send request
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check for error status codes
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		var apiErr DeepSeekError
-		if err := json.Unmarshal(body, &apiErr); err != nil {
-			return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
-		}
-		return fmt.Errorf("API error: %s (type: %s, code: %s)",
-			apiErr.Error.Message, apiErr.Error.Type, apiErr.Error.Code)
-	}
-
-	// Process streaming response
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Skip empty lines and comments
-		if line == "" || strings.HasPrefix(line, ":") {
-			continue
-		}
-
-		// Remove "data: " prefix
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		data := strings.TrimPrefix(line, "data: ")
-
-		// Check for end of stream
-		if data == "[DONE]" {
-			c.logger.Debug("Stream completed")
-			break
-		}
-
-		// Parse JSON chunk
-		var streamResp DeepSeekStreamResponse
-		if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
-			c.logger.Warn("Failed to unmarshal stream chunk", "error", err, "data", data)
-			continue
-		}
-
-		// Call callback with chunk
-		if err := callback(&streamResp); err != nil {
-			return fmt.Errorf("callback error: %w", err)
-		}
-	}
-
-	// Check for scanner errors
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("stream reading error: %w", err)
+	if config.Timeout <= 0 {
+		return fmt.Errorf("timeout must be positive")
 	}
 
 	return nil
 }
 
-// SetConfig updates the client configuration
-func (c *DeepSeekClient) SetConfig(config *DeepSeekConfig) {
-	c.config = config
-
-	// Update HTTP client timeout if needed
-	if config.Timeout > 0 {
-		c.httpClient.Timeout = config.Timeout
+// Close closes the DeepSeek client and cleans up resources
+func (c *DeepSeekClient) Close() error {
+	if c.httpClient != nil {
+		return c.httpClient.Close()
 	}
+	return nil
 }
 
-// GetConfig returns the current client configuration
-func (c *DeepSeekClient) GetConfig() *DeepSeekConfig {
+// GetConfig returns the client configuration
+func (c *DeepSeekClient) GetConfig() *common.CommonModelConfig {
 	return c.config
 }
 
-// Close closes the HTTP client and cleans up resources
-func (c *DeepSeekClient) Close() error {
-	// Close idle connections
-	if transport, ok := c.httpClient.Transport.(*http.Transport); ok {
-		transport.CloseIdleConnections()
+// GetLogger returns the client logger
+func (c *DeepSeekClient) GetLogger() interfaces.Logger {
+	return c.logger
+}
+
+// UpdateConfig updates the client configuration
+func (c *DeepSeekClient) UpdateConfig(config *common.CommonModelConfig) error {
+	if err := validateConfig(config); err != nil {
+		return fmt.Errorf("invalid config: %w", err)
 	}
+
+	c.config = config
+	c.apiKey = config.APIKey
+	if config.BaseURL != "" {
+		c.baseURL = config.BaseURL
+	}
+
+	c.logger.Info("DeepSeek client configuration updated",
+		"model", config.Model,
+		"base_url", c.baseURL)
+
 	return nil
 }
 
-// ValidateRequest validates a DeepSeek request before sending
-func (c *DeepSeekClient) ValidateRequest(req *DeepSeekRequest) error {
+// PrepareHeaders prepares HTTP headers for DeepSeek API requests
+func (c *DeepSeekClient) PrepareHeaders() map[string]string {
+	headers := make(map[string]string)
+	headers["Content-Type"] = common.MIMETypeJSON
+	headers["Accept"] = common.MIMETypeJSON
+	headers["Authorization"] = "Bearer " + c.apiKey
+	headers["User-Agent"] = "PonchoFramework-DeepSeek/1.0"
+	return headers
+}
+
+// BuildURL builds the full URL for API endpoints
+func (c *DeepSeekClient) BuildURL(endpoint string) string {
+	return c.baseURL + endpoint
+}
+
+// ValidateRequest validates a request before sending to DeepSeek API
+func (c *DeepSeekClient) ValidateRequest(req *interfaces.PonchoModelRequest) error {
 	if req == nil {
 		return fmt.Errorf("request cannot be nil")
 	}
 
-	if req.Messages == nil || len(req.Messages) == 0 {
+	if req.Messages == nil {
 		return fmt.Errorf("request must contain at least one message")
 	}
 
-	// Validate messages
-	for i, msg := range req.Messages {
-		if msg.Role == "" {
-			return fmt.Errorf("message %d must have a role", i)
-		}
-		if msg.Content == "" && len(msg.ToolCalls) == 0 {
-			return fmt.Errorf("message %d must have content or tool calls", i)
-		}
-	}
-
-	// Validate model
-	if req.Model == "" {
-		req.Model = c.config.Model
-	}
-
 	// Validate max_tokens
-	if req.MaxTokens != nil && *req.MaxTokens <= 0 {
-		return fmt.Errorf("max_tokens must be positive")
+	if req.MaxTokens != nil && *req.MaxTokens > c.config.MaxTokens {
+		return fmt.Errorf("max_tokens (%d) exceeds model maximum (%d)", *req.MaxTokens, c.config.MaxTokens)
 	}
 
-	// Validate temperature
-	if req.Temperature != nil && (*req.Temperature < 0 || *req.Temperature > 2) {
-		return fmt.Errorf("temperature must be between 0 and 2")
-	}
-
-	// Validate top_p
-	if req.TopP != nil && (*req.TopP < 0 || *req.TopP > 1) {
-		return fmt.Errorf("top_p must be between 0 and 1")
+	// DeepSeek doesn't support vision
+	for i, msg := range req.Messages {
+		for j, part := range msg.Content {
+			if part.Type == interfaces.PonchoContentTypeMedia {
+				return fmt.Errorf("DeepSeek does not support media content (message %d, part %d)", i, j)
+			}
+		}
 	}
 
 	return nil
 }
 
-// PrepareRequest creates a DeepSeek request from configuration
-func (c *DeepSeekClient) PrepareRequest() *DeepSeekRequest {
-	return &DeepSeekRequest{
-		Model:            c.config.Model,
-		MaxTokens:        &c.config.MaxTokens,
-		Temperature:      &c.config.Temperature,
-		TopP:             c.config.TopP,
-		FrequencyPenalty: c.config.FrequencyPenalty,
-		PresencePenalty:  c.config.PresencePenalty,
-		Stop:             c.config.Stop,
-		ResponseFormat:   c.config.ResponseFormat,
-		Thinking:         c.config.Thinking,
-		LogProbs:         c.config.LogProbs,
-		TopLogProbs:      c.config.TopLogProbs,
+// GetModelCapabilities returns the capabilities of DeepSeek model
+func (c *DeepSeekClient) GetModelCapabilities() *common.ModelCapabilities {
+	return &common.ModelCapabilities{
+		SupportsStreaming:  true,
+		SupportsTools:     true,
+		SupportsVision:     false,
+		SupportsSystem:     true,
+		SupportedTypes:     []common.ContentType{common.ContentTypeText},
+		MaxInputTokens:     c.config.MaxTokens,
+		MaxOutputTokens:    c.config.MaxTokens,
+	}
+}
+
+// GetModelMetadata returns metadata about the DeepSeek model
+func (c *DeepSeekClient) GetModelMetadata() *common.ModelMetadata {
+	return &common.ModelMetadata{
+		Provider:     common.ProviderDeepSeek,
+		Model:        c.config.Model,
+		ModelType:    common.ModelTypeText,
+		Capabilities: *c.GetModelCapabilities(),
+		Version:      "1.0",
+		Description:  "DeepSeek Chat - Advanced language model for text generation and reasoning",
+		CostPer1KTokens: 0.001, // Example cost
+	}
+}
+
+// IsHealthy checks if the DeepSeek client is healthy
+func (c *DeepSeekClient) IsHealthy(ctx context.Context) error {
+	// Simple health check - try to validate API key
+	// In practice, you might want to call a specific health endpoint
+	if c.apiKey == "" {
+		return fmt.Errorf("API key is not configured")
+	}
+
+	if c.baseURL == "" {
+		return fmt.Errorf("base URL is not configured")
+	}
+
+	return nil
+}
+
+// GetRateLimitInfo returns current rate limit information
+func (c *DeepSeekClient) GetRateLimitInfo() *common.RateLimitInfo {
+	// DeepSeek rate limits (example values - should be updated based on actual API docs)
+	return &common.RateLimitInfo{
+		RequestsPerMinute: 60,
+		TokensPerMinute:   100000,
+	}
+}
+
+// PrepareRequestMetrics creates metrics for a request
+func (c *DeepSeekClient) PrepareRequestMetrics(requestID string, startTime time.Time) *common.RequestMetrics {
+	return &common.RequestMetrics{
+		RequestID:  requestID,
+		Provider:   common.ProviderDeepSeek,
+		Model:      c.config.Model,
+		StartTime:  startTime,
+		Success:    false, // Will be updated after request completes
+	}
+}
+
+// LogRequest logs a request to DeepSeek API
+func (c *DeepSeekClient) LogRequest(req *interfaces.PonchoModelRequest, requestID string) {
+	c.logger.Debug("DeepSeek API request",
+		"request_id", requestID,
+		"model", c.config.Model,
+		"messages_count", len(req.Messages),
+		"max_tokens", req.MaxTokens,
+		"temperature", req.Temperature,
+		"stream", req.Stream,
+		"tools_count", len(req.Tools))
+}
+
+// LogResponse logs a response from DeepSeek API
+func (c *DeepSeekClient) LogResponse(resp *interfaces.PonchoModelResponse, requestID string, duration time.Duration) {
+	if resp != nil && resp.Usage != nil {
+		c.logger.Debug("DeepSeek API response",
+			"request_id", requestID,
+			"duration_ms", duration.Milliseconds(),
+			"prompt_tokens", resp.Usage.PromptTokens,
+			"completion_tokens", resp.Usage.CompletionTokens,
+			"total_tokens", resp.Usage.TotalTokens,
+			"finish_reason", resp.FinishReason)
+	} else {
+		c.logger.Debug("DeepSeek API response",
+			"request_id", requestID,
+			"duration_ms", duration.Milliseconds(),
+			"finish_reason", resp.FinishReason)
+	}
+}
+
+// LogError logs an error from DeepSeek API
+func (c *DeepSeekClient) LogError(err error, requestID string, duration time.Duration) {
+	c.logger.Error("DeepSeek API error",
+		"request_id", requestID,
+		"duration_ms", duration.Milliseconds(),
+		"error", err.Error())
+
+	if modelErr, ok := err.(*common.ModelError); ok {
+		c.logger.Error("DeepSeek API model error details",
+			"request_id", requestID,
+			"error_code", modelErr.Code,
+			"error_provider", modelErr.Provider,
+			"error_model", modelErr.Model,
+			"error_retryable", modelErr.Retryable,
+			"error_status_code", modelErr.StatusCode)
 	}
 }

@@ -39,52 +39,19 @@
 ## External Services
 
 ### 1. S3 Storage (Yandex Cloud)
-
-**Configuration:**
-```yaml
-s3:
-  url: "https://storage.yandexcloud.net"
-  region: "ru-central1"
-  bucket: "plm-ai"
-  endpoint: "storage.yandexcloud.net"
-  use_ssl: true
-```
-
-**Client:** MinIO Go SDK (S3-compatible)
-**Authentication:** 
-- Access Key: `S3_ACCESS_KEY` environment variable
-- Secret Key: `S3_SECRET_KEY` environment variable
-
-**Usage:**
-- Article data storage (JSON)
-- Fashion sketch images
-- Product photos
-- Technical drawings
+- **Client**: MinIO Go SDK (S3-compatible)
+- **Authentication**: S3_ACCESS_KEY, S3_SECRET_KEY
+- **Usage**: Article data (JSON), fashion sketch images, product photos
 
 ### 2. Wildberries API
-
-**Configuration:**
-```yaml
-wildberries:
-  base_url: "https://content-api.wildberries.ru"
-  timeout: 30
-```
-
-**Authentication:** API key via `WB_API_CONTENT_KEY` environment variable
-
-**Endpoints Used:**
-- `/content/v2/object/parent/all` - Parent categories
-- `/content/v2/object/all` - Subjects/categories
-- `/content/v2/object/charc/all` - Characteristics
+- **Authentication**: WB_API_CONTENT_KEY
+- **Endpoints**: Parent categories, subjects, characteristics
+- **Usage**: Категории, предметы, характеристики товаров
 
 ### 3. Redis (Future Phase)
-
-**Purpose:** Distributed caching layer (L2 cache)
-**Authentication:** Via `REDIS_URL` environment variable
-**Usage:**
-- Cache model responses
-- Reduce API call costs
-- Improve response times
+- **Purpose**: Distributed caching layer (L2 cache)
+- **Authentication**: REDIS_URL
+- **Usage**: Cache model responses, reduce API costs
 
 ## Configuration Management
 
@@ -339,6 +306,19 @@ TLSHandshakeTimeout: 10s
 4. **Keep dependency tree shallow**
 5. **Use stable, well-maintained packages**
 
+### Prompt System Dependencies
+
+**Core Components:**
+- **Template Parser**: Custom V1 format parser using `regexp` ✅
+- **Variable Processor**: Template variable substitution and validation ✅
+- **Template Validator**: Comprehensive validation with fashion-specific rules ✅
+- **Cache Implementation**: Thread-safe LRU cache using `container/list` ✅
+- **Template Executor**: Model request building and execution ✅
+
+**External Dependencies:**
+- None for core prompt system (uses only Go standard library)
+- Framework integration through interfaces ✅
+
 ## Development Environment
 
 ### Setup Requirements
@@ -375,37 +355,17 @@ go build -o poncho-framework ./cmd/poncho-framework
 ## Deployment Architecture
 
 ### Development
-- Local development environment
-- Docker Compose (optional)
+- Local environment с Docker Compose
 - Direct Go execution
-
-### Staging
-- Kubernetes cluster
-- Separate namespace
-- Test data and APIs
 
 ### Production
 - Kubernetes cluster (multi-region)
 - High availability (3+ replicas)
-- Auto-scaling enabled
-- Full monitoring stack
+- Auto-scaling с monitoring stack
 
 ## Performance Targets
 
-**Response Time:**
-- p50: < 1 second
-- p95: < 2 seconds
-- p99: < 5 seconds
-
-**Throughput:**
-- > 100 requests/second per instance
-- Horizontal scaling for higher loads
-
-**Resource Usage:**
-- Memory: < 512MB per instance
-- CPU: < 70% average utilization
-
-**Reliability:**
-- Uptime: > 99.9%
-- Error rate: < 1%
-- MTTR: < 5 minutes
+- **Response Time**: p50 < 1s, p95 < 2s, p99 < 5s
+- **Throughput**: > 100 requests/second per instance
+- **Resource Usage**: Memory < 512MB, CPU < 70%
+- **Reliability**: Uptime > 99.9%, Error rate < 1%

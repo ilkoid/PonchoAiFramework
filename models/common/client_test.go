@@ -11,7 +11,7 @@ import (
 
 func TestHTTPClientFactory_GetClient(t *testing.T) {
 	logger := interfaces.NewDefaultLogger()
-	factory := NewHTTPClientFactory(DefaultHTTPConfig, logger)
+	factory := NewHTTPClientFactory(&DefaultHTTPConfig, logger)
 
 	tests := []struct {
 		name     string
@@ -43,11 +43,11 @@ func TestHTTPClientFactory_GetClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := factory.GetClient(tt.provider)
-			
+
 			if tt.wantErr && client == nil {
 				t.Error("GetClient() returned nil client when error expected")
 			}
-			
+
 			if !tt.wantErr && client == nil {
 				t.Error("GetClient() returned nil client")
 			}
@@ -59,9 +59,9 @@ func TestHTTPRequestBuilder_SetHeader(t *testing.T) {
 	builder := NewHTTPRequestBuilder("GET", "https://api.example.com/test")
 
 	tests := []struct {
-		name   string
-		key    string
-		value  string
+		name  string
+		key   string
+		value string
 	}{
 		{"Content-Type", "Content-Type", "application/json"},
 		{"Authorization", "Authorization", "Bearer token123"},
@@ -71,12 +71,12 @@ func TestHTTPRequestBuilder_SetHeader(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			builder.SetHeader(tt.key, tt.value)
-			
+
 			req, err := builder.Build()
 			if err != nil {
 				t.Fatalf("Build() failed: %v", err)
 			}
-			
+
 			actualValue := req.Header.Get(tt.key)
 			if actualValue != tt.value {
 				t.Errorf("SetHeader() = %s, want %s", actualValue, tt.value)
@@ -138,17 +138,17 @@ func TestHTTPRequestBuilder_Build(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:   "POST with body",
-			method: "POST",
-			url:    "https://api.example.com/test",
-			body:   map[string]string{"key": "value"},
+			name:    "POST with body",
+			method:  "POST",
+			url:     "https://api.example.com/test",
+			body:    map[string]string{"key": "value"},
 			wantErr: false,
 		},
 		{
-			name:    "With headers",
-			method:  "GET",
-			url:     "https://api.example.com/test",
-			body:    nil,
+			name:   "With headers",
+			method: "GET",
+			url:    "https://api.example.com/test",
+			body:   nil,
 			headers: map[string]string{
 				"Content-Type":  "application/json",
 				"Authorization": "Bearer token123",
@@ -171,7 +171,7 @@ func TestHTTPRequestBuilder_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			builder := NewHTTPRequestBuilder(tt.method, tt.url)
-			
+
 			if tt.body != nil {
 				bodyBytes, _ := json.Marshal(tt.body)
 				builder.SetBody(bodyBytes)
@@ -179,28 +179,28 @@ func TestHTTPRequestBuilder_Build(t *testing.T) {
 			if tt.headers != nil {
 				builder.SetHeaders(tt.headers)
 			}
-			
+
 			req, err := builder.Build()
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Build() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr {
 				if req == nil {
 					t.Error("Build() returned nil request")
 					return
 				}
-				
+
 				if req.Method != tt.method {
 					t.Errorf("Method = %s, want %s", req.Method, tt.method)
 				}
-				
+
 				if req.URL.String() != tt.url {
 					t.Errorf("URL = %s, want %s", req.URL.String(), tt.url)
 				}
-				
+
 				// Check headers
 				for key, expectedValue := range tt.wantHeaders {
 					actualValue := req.Header.Get(key)
@@ -233,7 +233,7 @@ func TestHTTPResponse_IsSuccess(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := &http.Response{StatusCode: tt.statusCode}
 			response := &HTTPResponse{Response: resp}
-			
+
 			result := response.IsSuccess()
 			if result != tt.want {
 				t.Errorf("IsSuccess() = %t, want %t", result, tt.want)
@@ -260,7 +260,7 @@ func TestHTTPResponse_IsClientError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := &http.Response{StatusCode: tt.statusCode}
 			response := &HTTPResponse{Response: resp}
-			
+
 			result := response.IsClientError()
 			if result != tt.want {
 				t.Errorf("IsClientError() = %t, want %t", result, tt.want)
@@ -286,7 +286,7 @@ func TestHTTPResponse_IsServerError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := &http.Response{StatusCode: tt.statusCode}
 			response := &HTTPResponse{Response: resp}
-			
+
 			result := response.IsServerError()
 			if result != tt.want {
 				t.Errorf("IsServerError() = %t, want %t", result, tt.want)
@@ -312,10 +312,10 @@ func TestCreateJSONRequest(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:   "POST with body",
-			method: "POST",
-			url:    "https://api.example.com/test",
-			body:   map[string]string{"key": "value"},
+			name:    "POST with body",
+			method:  "POST",
+			url:     "https://api.example.com/test",
+			body:    map[string]string{"key": "value"},
 			wantErr: false,
 		},
 	}
@@ -323,26 +323,26 @@ func TestCreateJSONRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req, err := CreateJSONRequest(tt.method, tt.url, tt.body, tt.headers)
-			
+
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CreateJSONRequest() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			
+
 			if !tt.wantErr {
 				if req == nil {
 					t.Error("CreateJSONRequest() returned nil request")
 					return
 				}
-				
+
 				if req.Method != tt.method {
 					t.Errorf("Method = %s, want %s", req.Method, tt.method)
 				}
-				
+
 				if req.URL.String() != tt.url {
 					t.Errorf("URL = %s, want %s", req.URL.String(), tt.url)
 				}
-				
+
 				// Check Content-Type header
 				contentType := req.Header.Get("Content-Type")
 				if contentType != "application/json" {
@@ -379,7 +379,7 @@ func TestDefaultHTTPConfig(t *testing.T) {
 // Benchmark tests
 func BenchmarkHTTPClientFactory_GetClient(b *testing.B) {
 	logger := interfaces.NewDefaultLogger()
-	factory := NewHTTPClientFactory(DefaultHTTPConfig, logger)
+	factory := NewHTTPClientFactory(&DefaultHTTPConfig, logger)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

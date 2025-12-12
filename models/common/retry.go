@@ -321,7 +321,7 @@ func (rcb *RetryWithCircuitBreaker) ResetCircuitBreaker() {
 func IsRetryableErrorWithConfig(err error, config RetryConfig) bool {
 	if modelErr, ok := err.(*ModelError); ok {
 		for _, retryableErr := range config.RetryableErrors {
-			if modelErr.Code == retryableErr {
+			if string(modelErr.Code) == retryableErr {
 				return true
 			}
 		}
@@ -366,14 +366,14 @@ func CalculateLinearBackoff(attempt int, baseDelay time.Duration, maxDelay time.
 // GetRetryDelayForError returns appropriate retry delay for different error types
 func GetRetryDelayForError(err error, attempt int) time.Duration {
 	if modelErr, ok := err.(*ModelError); ok {
-		switch modelErr.Category {
-		case ErrorCategoryRateLimit:
+		switch modelErr.Code {
+		case ErrorCodeRateLimitError:
 			// Exponential backoff for rate limits
 			return CalculateExponentialBackoff(attempt, 2*time.Second, 60*time.Second, true)
-		case ErrorCategoryServer:
+		case ErrorCodeServerError, ErrorCodeServiceUnavailable:
 			// Longer backoff for server errors
 			return CalculateExponentialBackoff(attempt, 5*time.Second, 120*time.Second, true)
-		case ErrorCategoryNetwork, ErrorCategoryTimeout:
+		case ErrorCodeNetworkError, ErrorCodeTimeoutError, ErrorCodeConnectionError:
 			// Moderate backoff for network issues
 			return CalculateLinearBackoff(attempt, 1*time.Second, 30*time.Second, true)
 		default:

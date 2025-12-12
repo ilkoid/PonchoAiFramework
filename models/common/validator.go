@@ -313,7 +313,7 @@ func (v *Validator) validateModelRequest(req *interfaces.PonchoModelRequest, res
 	}
 
 	// Validate messages
-	if req.Messages == nil || len(req.Messages) == 0 {
+	if len(req.Messages) == 0 {
 		result.Valid = false
 		result.Errors = append(result.Errors, ValidationError{
 			Field:   "messages",
@@ -384,7 +384,7 @@ func (v *Validator) validateMessage(msg *interfaces.PonchoMessage, index int, re
 	}
 
 	// Validate content
-	if msg.Content == nil || len(msg.Content) == 0 {
+	if len(msg.Content) == 0 {
 		result.Valid = false
 		result.Errors = append(result.Errors, ValidationError{
 			Field:   fmt.Sprintf("messages[%d].content", index),
