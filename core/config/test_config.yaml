@@ -1,0 +1,26 @@
+models:
+  test-model:
+    provider: "test-provider"
+    model_name: "test-model"
+    api_key: "test-key"
+    max_tokens: 1000
+    temperature: 0.7
+    supports:
+      vision: false
+      tools: true
+      stream: true
+      system: true
+
+tools:
+  test-tool:
+    enabled: true
+    timeout: "30s"
+
+flows:
+  test-flow:
+    enabled: true
+    timeout: "60s"
+
+logging:
+  level: "info"
+  format: "text"

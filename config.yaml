@@ -1,32 +1,298 @@
-# Poncho Tools Configuration
-# Файл конфигурации для оптимизации изображений и других параметров
+# PonchoFramework Configuration File
+# This file contains the main configuration for the Poncho AI Framework
 
-# Оптимизация изображений
-image_optimization:
+# Models Configuration
+models:
+  # DeepSeek Chat Model
+  deepseek-chat:
+    provider: "deepseek"
+    model_name: "deepseek-chat"
+    api_key: "${DEEPSEEK_API_KEY}"
+    max_tokens: 4000
+    temperature: 0.7
+    timeout: 30s
+    supports:
+      vision: false
+      tools: true
+      stream: true
+      system: true
+    custom_params:
+      top_p: 0.9
+      frequency_penalty: 0.0
+      presence_penalty: 0.0
+
+  # Z.AI GLM Vision Model
+  glm-vision:
+    provider: "zai"
+    model_name: "glm-4.6v"
+    api_key: "${ZAI_API_KEY}"
+    max_tokens: 2000
+    temperature: 0.5
+    timeout: 60s
+    supports:
+      vision: true
+      tools: true
+      stream: true
+      system: true
+    custom_params:
+      top_p: 0.8
+      max_image_size: "10MB"
+
+  # Z.AI GLM Text Model
+  glm-chat:
+    provider: "zai"
+    model_name: "glm-4.6"
+    api_key: "${ZAI_API_KEY}"
+    max_tokens: 3000
+    temperature: 0.6
+    timeout: 30s
+    supports:
+      vision: false
+      tools: true
+      stream: true
+      system: true
+    custom_params:
+      top_p: 0.85
+
+# Tools Configuration
+tools:
+  # Article Importer Tool
+  article_importer:
+    enabled: true
+    timeout: 30s
+    retry:
+      max_attempts: 3
+      backoff: "exponential"
+      base_delay: 1s
+      max_delay: 30s
+    cache:
+      enabled: true
+      ttl: 300s
+      max_size: 1000
+    dependencies: []
+    custom_params:
+      max_images: 10
+      image_optimization: true
+
+  # Wildberries Categories Tool
+  wb_categories:
+    enabled: true
+    timeout: 15s
+    retry:
+      max_attempts: 2
+      backoff: "linear"
+      base_delay: 2s
+      max_delay: 10s
+    cache:
+      enabled: true
+      ttl: 1800s
+      max_size: 500
+    dependencies: []
+    custom_params:
+      locale: "ru"
+      include_inactive: false
+
+  # S3 Storage Tool
+  s3_storage:
+    enabled: true
+    timeout: 45s
+    retry:
+      max_attempts: 3
+      backoff: "exponential"
+      base_delay: 2s
+      max_delay: 60s
+    cache:
+      enabled: false
+    dependencies: []
+    custom_params:
+      bucket: "plm-ai"
+      region: "ru-central1"
+
+  # Vision Analysis Tool
+  vision_analyzer:
+    enabled: true
+    timeout: 60s
+    retry:
+      max_attempts: 2
+      backoff: "exponential"
+      base_delay: 5s
+      max_delay: 120s
+    cache:
+      enabled: true
+      ttl: 3600s
+      max_size: 100
+    dependencies: ["glm-vision"]
+    custom_params:
+      analysis_types: ["fashion", "materials", "style", "season"]
+      confidence_threshold: 0.7
+
+# Flows Configuration
+flows:
+  # Article Processor Flow
+  article_processor:
+    enabled: true
+    timeout: 120s
+    parallel: false
+    retry:
+      max_attempts: 2
+      backoff: "exponential"
+      base_delay: 10s
+      max_delay: 300s
+    dependencies:
+      - "article_importer"
+      - "wb_categories"
+      - "vision_analyzer"
+    custom_params:
+      auto_categorize: true
+      generate_description: true
+      validate_characteristics: true
+
+  # Mini-Agent Flow
+  mini_agent:
+    enabled: true
+    timeout: 180s
+    parallel: true
+    retry:
+      max_attempts: 1
+      backoff: "linear"
+      base_delay: 5s
+      max_delay: 30s
+    dependencies:
+      - "deepseek-chat"
+      - "glm-vision"
+      - "wb_categories"
+    custom_params:
+      max_iterations: 5
+      temperature_schedule: [0.7, 0.5, 0.3]
+
+# Logging Configuration
+logger:
+  level: "info"  # debug, info, warn, error
+  format: "text"  # text, json
+  output: "stdout"  # stdout, stderr, file path
+  file_config:
+    max_size: "100MB"
+    max_backups: 5
+    max_age: "30d"
+    compress: true
+  fields:
+    service: "poncho-framework"
+    version: "1.0.0"
+    environment: "${PONCHO_ENV:development}"
+
+# Metrics Configuration
+metrics:
   enabled: true
-  max_width: 640        # Максимальная ширина в пикселях
-  max_height: 480       # Максимальная высота в пикселях  
-  quality: 90           # Качество JPEG (1-100)
-  max_size_bytes: 90000  # Максимальный размер файла в байтах (90KB)
+  interval: 30s
+  endpoint: ""  # Prometheus push gateway endpoint
+  labels:
+    service: "poncho-framework"
+    instance: "${HOSTNAME:localhost}"
+  collectors:
+    - "requests"
+    - "duration"
+    - "errors"
+    - "cache_hits"
 
-# S3 конфигурация (основные параметры)
+# Cache Configuration
+cache:
+  type: "memory"  # memory, redis
+  memory:
+    max_size: "100MB"
+    ttl: "1h"
+    cleanup_interval: "10m"
+  redis:
+    url: "${REDIS_URL:redis://localhost:6379}"
+    ttl: "1h"
+    max_connections: 10
+    key_prefix: "poncho:"
+
+# Security Configuration
+security:
+  api_keys:
+    deepseek: "${DEEPSEEK_API_KEY}"
+    zai: "${ZAI_API_KEY}"
+    wildberries: "${WB_API_CONTENT_KEY}"
+    s3_access_key: "${S3_ACCESS_KEY}"
+    s3_secret_key: "${S3_SECRET_KEY}"
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 100
+    burst: 20
+  encryption:
+    enabled: false
+    algorithm: "AES-256-GCM"
+    key_source: "env"  # env, file, kms
+
+# S3 Configuration
 s3:
   url: "https://storage.yandexcloud.net"
   region: "ru-central1"
   bucket: "plm-ai"
   endpoint: "storage.yandexcloud.net"
   use_ssl: true
+  access_key: "${S3_ACCESS_KEY}"
+  secret_key: "${S3_SECRET_KEY}"
+  timeout: 30s
+  retry:
+    max_attempts: 3
+    backoff: "exponential"
+    base_delay: 1s
 
-# Wildberries API конфигурация
+# Wildberries Configuration
 wildberries:
   base_url: "https://content-api.wildberries.ru"
-  timeout: 30
+  timeout: 30s
+  api_key: "${WB_API_CONTENT_KEY}"
+  retry:
+    max_attempts: 3
+    backoff: "exponential"
+    base_delay: 2s
+  rate_limit:
+    requests_per_second: 10
+    burst: 20
 
-# Логирование
-logger:
-  level: "info"         # debug, info, warn, error
-  format: "text"        # text, json
-  file: ""              # пустой = stdout
+# Image Optimization Configuration
+image_optimization:
+  enabled: true
+  max_width: 640
+  max_height: 480
+  quality: 90
+  max_size_bytes: 90000
+  format: "jpeg"
+  preserve_metadata: false
 
-# Примечание: API ключи загружаются из переменных окружения:
-# DEEPSEEK_API_KEY, ZAI_API_KEY, S3_ACCESS_KEY, S3_SECRET_KEY, WB_API_CONTENT_KEY
+# Server Configuration (if running as HTTP service)
+server:
+  enabled: false
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+  max_header_bytes: 1048576
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+
+# Development Configuration
+development:
+  debug_mode: false
+  pretty_print: true
+  enable_profiling: false
+  profiling_port: 6060
+  mock_external_apis: false
+  log_requests: false
+  log_responses: false
+
+# Feature Flags
+features:
+  enable_vision_analysis: true
+  enable_auto_categorization: true
+  enable_description_generation: true
+  enable_batch_processing: true
+  enable_streaming_responses: true
+  enable_caching: true
+  enable_metrics: true
+  enable_rate_limiting: true
