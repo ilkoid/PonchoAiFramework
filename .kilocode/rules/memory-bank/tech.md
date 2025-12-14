@@ -39,9 +39,10 @@
 ## External Services
 
 ### 1. S3 Storage (Yandex Cloud)
-- **Client**: MinIO Go SDK (S3-compatible)
+- **Client**: Custom HTTP-based S3-compatible client
 - **Authentication**: S3_ACCESS_KEY, S3_SECRET_KEY
 - **Usage**: Article data (JSON), fashion sketch images, product photos
+- **Features**: Image processing, resizing, optimization
 
 ### 2. Wildberries API
 - **Authentication**: WB_API_CONTENT_KEY
@@ -286,7 +287,9 @@ TLSHandshakeTimeout: 10s
 - Connection pooling built-in ✅
 
 **S3 Client:**
-- MinIO Go SDK or AWS SDK v2 (planned for Phase 2)
+- Custom S3-compatible implementation using `net/http` ✅
+- Image processing using `image/jpeg`, `image/png` ✅
+- Base64 encoding using `encoding/base64` ✅
 
 **Testing:**
 - `github.com/stretchr/testify` - Testing utilities (planned)
@@ -318,6 +321,19 @@ TLSHandshakeTimeout: 10s
 **External Dependencies:**
 - None for core prompt system (uses only Go standard library)
 - Framework integration through interfaces ✅
+
+### Tool System Dependencies
+
+**Core Components:**
+- **S3 Client**: Custom HTTP-based S3-compatible client ✅
+- **Image Processing**: Go standard library `image` package ✅
+- **Tool Factory**: Dynamic tool creation and validation ✅
+- **Configuration System**: YAML-based tool configuration ✅
+
+**External Dependencies:**
+- None for core tool system (uses only Go standard library)
+- S3 compatibility through HTTP API ✅
+- Image format support (JPEG, PNG) ✅
 
 ## Development Environment
 
