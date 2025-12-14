@@ -1,3 +1,53 @@
+// Package common provides comprehensive validation for AI model requests and responses
+// in PonchoFramework. This file implements rule-based validation with type checking,
+// constraint validation, and detailed error reporting for model operations.
+//
+// Key Features:
+// - Rule-based validation system with configurable constraints
+// - Type validation for all supported data types
+// - Range and length validation with min/max constraints
+// - Pattern matching with regex support
+// - Enum validation for allowed value sets
+// - Custom validation functions for complex rules
+//
+// Validation Categories:
+// - Request Validation: Model requests with messages, tools, parameters
+// - Response Validation: Model responses with usage and content
+// - Message Validation: Individual message structure and content
+// - Content Validation: Text, media, and tool content parts
+// - Configuration Validation: Model parameters and settings
+//
+// Validation Rules:
+// - Required field validation
+// - Type checking (string, number, array, boolean, object)
+// - Length constraints (min/max length for strings)
+// - Range constraints (min/max values for numbers)
+// - Pattern matching (regex for string validation)
+// - Enum validation (allowed value sets)
+// - Custom validation (user-defined functions)
+//
+// Usage Examples:
+//   validator := NewValidator(DefaultValidationRules, logger)
+//   result := validator.ValidateRequest(request)
+//   if !result.Valid {
+//       for _, err := range result.Errors {
+//           log.Error("Validation failed", "field", err.Field, "message", err.Message)
+//       }
+//   }
+//
+// Builder Pattern:
+//   rule := NewValidationRuleBuilder("temperature").
+//       Required().
+//       Type("number").
+//       MinValue(0.0).
+//       MaxValue(2.0).
+//       Build()
+//
+// Error Reporting:
+// - Structured error details with field names
+// - Rule identification for debugging
+// - Value context in error messages
+// - Multiple error aggregation
 package common
 
 import (

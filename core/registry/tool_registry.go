@@ -1,5 +1,15 @@
 package registry
 
+// This file implements the tool registry for the PonchoFramework
+// It provides thread-safe storage and management of tools
+// It implements the PonchoToolRegistry interface with full CRUD operations
+// It supports tool registration, retrieval, listing, and removal
+// It provides category-based tool listing and filtering capabilities
+// It includes concurrent access protection using sync.RWMutex
+// It validates tool registration and handles dependency management
+// It serves as the central repository for all tool instances in the framework
+// It provides comprehensive logging for all registry operations
+
 import (
 	"fmt"
 	"sync"

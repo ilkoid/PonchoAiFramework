@@ -1,0 +1,117 @@
+# Multi-stage production Dockerfile for PonchoAI Framework
+# Optimized for security, size, and performance
+
+# Build stage
+FROM golang:1.21-alpine AS builder
+
+# Security and build arguments
+ARG VERSION=dev
+ARG BUILD_TIME
+ARG GIT_COMMIT
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    upx
+
+# Set working directory
+WORKDIR /build
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# Build the application with security flags
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build \
+    -ldflags="-w -s \
+    -X github.com/ilkoid/PonchoAiFramework/core.Version=${VERSION} \
+    -X github.com/ilkoid/PonchoAiFramework/core.BuildTime=${BUILD_TIME} \
+    -X github.com/ilkoid/PonchoAiFramework/core.GitCommit=${GIT_COMMIT}" \
+    -a -installsuffix cgo \
+    -o ponchoai-framework ./cmd/ponchoai-framework
+
+# Optional: Compress binary
+RUN upx --best --lzma ponchoai-framework
+
+# Production stage
+FROM alpine:3.19
+
+# Security: Create non-root user
+RUN addgroup -g 1001 -S ponchoai && \
+    adduser -u 1001 -S ponchoai -G ponchoai
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    curl \
+    tzdata \
+    dumb-init \
+    && rm -rf /var/cache/apk/*
+
+# Set timezone to UTC
+RUN ln -sf /usr/share/zoneinfo/UTC /etc/localtime && \
+    echo "UTC" > /etc/timezone
+
+# Set working directory
+WORKDIR /app
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/config /app/logs /tmp/cache /var/log/ponchoai && \
+    chown -R ponchoai:ponchoai /app /tmp/cache /var/log/ponchoai
+
+# Copy binary from builder stage
+COPY --from=builder /build/ponchoai-framework /app/ponchoai-framework
+
+# Copy production configuration
+COPY config-production.yaml /app/config/
+
+# Set ownership and permissions
+RUN chmod +x /app/ponchoai-framework && \
+    chown -R ponchoai:ponchoai /app
+
+# Switch to non-root user
+USER ponchoai
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Expose port
+EXPOSE 8080
+
+# Security: Set read-only filesystem except for specific directories
+VOLUME ["/app/logs", "/tmp/cache"]
+
+# Environment variables
+ENV GIN_MODE=release
+ENV LOG_LEVEL=info
+
+# Use dumb-init as PID 1
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["/app/ponchoai-framework"]
+
+# Labels for metadata
+LABEL maintainer="PonchoAI Team" \
+      version="${VERSION}" \
+      description="PonchoAI Framework Production Container" \
+      org.opencontainers.image.title="PonchoAI Framework" \
+      org.opencontainers.image.description="Production-ready AI framework container" \
+      org.opencontainers.image.url="https://github.com/ilkoid/PonchoAiFramework" \
+      org.opencontainers.image.source="https://github.com/ilkoid/PonchoAiFramework" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.created="${BUILD_TIME}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.licenses="MIT"
+
+# Security scan labels
+LABEL security.scan.enabled="true" \
+      security.scan.type="container" \
+      security.scan.vendor="anchore"

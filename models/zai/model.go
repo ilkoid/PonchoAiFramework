@@ -1,3 +1,33 @@
+// Package zai provides Z.AI GLM model implementation for PonchoFramework
+//
+// This package implements the PonchoModel interface for Z.AI's GLM-4.6 and GLM-4.6V
+// models, providing unified access to text generation, vision analysis, and tool
+// calling capabilities. The implementation supports both streaming and non-streaming
+// responses with comprehensive error handling and metrics collection.
+//
+// Key Features:
+// - Multimodal model support (text + vision)
+// - Fashion-specific vision analysis
+// - Streaming responses with SSE processing
+// - Tool calling and function execution
+// - Comprehensive request/response conversion
+// - Performance metrics and monitoring
+// - Graceful error handling and recovery
+//
+// Model Types:
+// - GLM-4.6: General purpose multimodal model
+// - GLM-4.6V: Vision-optimized model for fashion analysis
+//
+// Usage:
+//   model := NewZAIModel()
+//   err := model.Initialize(ctx, configMap)
+//   if err != nil {
+//       log.Fatal(err)
+//   }
+//
+//   resp, err := model.Generate(ctx, request)
+//   // or streaming:
+//   err := model.GenerateStreaming(ctx, request, callback)
 package zai
 
 import (
@@ -16,6 +46,11 @@ import (
 )
 
 // ZAIModel represents a Z.AI GLM model implementation
+//
+// This struct implements the PonchoModel interface for Z.AI's GLM models,
+// providing unified access to text generation, vision analysis, and tool calling
+// capabilities. It supports both streaming and non-streaming responses with
+// comprehensive error handling and performance monitoring.
 type ZAIModel struct {
 	*base.PonchoBaseModel
 	client *ZAIClient

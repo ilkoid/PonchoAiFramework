@@ -1,5 +1,15 @@
 package config
 
+// This file defines the configuration data structures for the PonchoFramework.
+// It provides comprehensive type definitions for all configuration components
+// including model configuration structures (DeepSeek, Z.AI, etc.),
+// tool configuration structures (S3, Wildberries, Vision, etc.),
+// and flow configuration structures with dependency management.
+// The file includes system-wide configuration settings (logging, metrics, etc.),
+// supports environment variable substitution and validation tags,
+// and serves as the central type system for framework configuration.
+// It enables type-safe configuration management throughout the framework.
+
 import (
 	"fmt"
 	"time"

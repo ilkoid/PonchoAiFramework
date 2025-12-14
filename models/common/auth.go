@@ -1,3 +1,32 @@
+// Package common provides shared authentication, HTTP client, and utility components
+// for AI model providers in PonchoFramework. This file implements comprehensive
+// authentication management supporting multiple auth schemes (Bearer, API Key, Basic, Custom)
+// with token refresh capabilities and provider-specific configurations.
+//
+// Key Features:
+// - Multi-provider authentication support (DeepSeek, Z.AI, OpenAI)
+// - Token lifecycle management with refresh capabilities
+// - Secure API key handling and masking
+// - HTTP middleware for automatic authentication
+// - Provider-specific auth configuration helpers
+//
+// Authentication Types Supported:
+// - Bearer: Standard Bearer token authentication
+// - API Key: Custom header or query parameter based auth
+// - Basic: Username/password authentication
+// - Custom: User-defined authentication functions
+// - None: No authentication required
+//
+// Usage Example:
+//   authConfig := GetDeepSeekAuthConfig(apiKey)
+//   authManager := NewAuthManager(ProviderDeepSeek, authConfig, logger)
+//   authenticatedClient := NewAuthMiddleware(authManager, logger).Wrap(client)
+//
+// Security Considerations:
+// - API keys are masked in logs using MaskAPIKey()
+// - Token refresh is supported with configurable buffer time
+// - Thread-safe token management with RWMutex
+// - Validation of authentication configurations
 package common
 
 import (

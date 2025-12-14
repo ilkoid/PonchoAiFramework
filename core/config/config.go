@@ -1,5 +1,22 @@
 package config
 
+// ConfigManager implements the configuration management system for the PonchoFramework.
+// It provides the ConfigManager interface and its implementation, handling loading,
+// validation, and management of configuration from YAML/JSON files.
+//
+// Key features:
+// - Environment variable substitution for sensitive data using ${VAR_NAME} syntax
+// - Configuration for models, tools, flows, and system settings
+// - Hot-reload capabilities with configuration change watchers
+// - Comprehensive configuration validation with detailed error reporting
+// - Factory methods for creating and initializing components from configuration
+// - Type-safe configuration access with automatic type conversion
+// - Support for multiple configuration file formats and merging
+//
+// This serves as the central configuration hub for the entire framework,
+// providing a unified interface for all configuration needs and ensuring
+// consistency across all framework components.
+
 import (
 	"fmt"
 	"os"

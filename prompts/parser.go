@@ -1,3 +1,26 @@
+// Package prompts provides template parsing and loading capabilities with V1 format support
+//
+// Key functionality:
+// • V1 format parser supporting {{role "...}} and {{media url=...}} syntax
+// • Template loading from file system with multiple format support
+// • Backward compatibility layer for legacy prompt formats
+// • Directory-based template discovery and bulk loading
+// • Template validation and metadata extraction
+// • File system operations with configurable extensions
+//
+// Key relationships:
+// • Implements PromptTemplateLoader interface from core interfaces
+// • Uses V1Integration for legacy format conversion to standard PromptTemplate
+// • Integrates with manager package for template lifecycle management
+// • Provides parsing utilities used by validator for syntax checking
+// • Supports fashion-specific template patterns and variables
+//
+// Design patterns:
+// • Strategy pattern for different template formats (V1, YAML, JSON)
+// • Factory pattern for template creation and initialization
+// • Template method pattern for parsing workflow
+// • Adapter pattern for V1 format integration with modern system
+
 package prompts
 
 import (
@@ -404,14 +427,160 @@ func (ptl *PromptTemplateLoaderImpl) parseBasicTemplate(content string) (*interf
 		Metadata:    &interfaces.PromptMetadata{},
 	}
 
-	// Simple parsing - treat entire content as user message
-	userPart := &interfaces.PromptPart{
-		Type:    interfaces.PromptPartTypeUser,
-		Content: strings.TrimSpace(content),
+	// Try to parse as YAML first
+	if err := ptl.parseYAMLTemplate(content, template); err != nil {
+		ptl.logger.Debug("Failed to parse as YAML, treating as plain text", "error", err)
+		// Fall back to simple parsing - treat entire content as user message
+		userPart := &interfaces.PromptPart{
+			Type:    interfaces.PromptPartTypeUser,
+			Content: strings.TrimSpace(content),
+		}
+		template.Parts = append(template.Parts, userPart)
 	}
-	template.Parts = append(template.Parts, userPart)
 
 	return template, nil
+}
+
+// parseYAMLTemplate parses YAML template content
+func (ptl *PromptTemplateLoaderImpl) parseYAMLTemplate(content string, template *interfaces.PromptTemplate) error {
+	// Simple YAML parsing for basic template structure
+	lines := strings.Split(content, "\n")
+	var partsContent []string
+	var variablesContent []string
+	
+	inParts := false
+	inVariables := false
+	
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		
+		if strings.HasPrefix(line, "name:") {
+			template.Name = strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+			continue
+		}
+		
+		if strings.HasPrefix(line, "description:") {
+			template.Description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+			continue
+		}
+		
+		if strings.HasPrefix(line, "version:") {
+			template.Version = strings.TrimSpace(strings.TrimPrefix(line, "version:"))
+			continue
+		}
+		
+		if strings.HasPrefix(line, "category:") {
+			template.Category = strings.TrimSpace(strings.TrimPrefix(line, "category:"))
+			continue
+		}
+		
+		if strings.HasPrefix(line, "parts:") {
+			inParts = true
+			inVariables = false
+			continue
+		}
+		
+		if strings.HasPrefix(line, "variables:") {
+			inVariables = true
+			inParts = false
+			continue
+		}
+		
+		if inParts && strings.HasPrefix(line, "- type:") {
+			if len(partsContent) > 0 {
+				// Process previous part
+				ptl.processPartContent(strings.Join(partsContent, "\n"), template)
+			}
+			partsContent = []string{line}
+		} else if inParts {
+			partsContent = append(partsContent, line)
+		}
+		
+		if inVariables && strings.HasPrefix(line, "- name:") {
+			if len(variablesContent) > 0 {
+				// Process previous variable
+				ptl.processVariableContent(strings.Join(variablesContent, "\n"), template)
+			}
+			variablesContent = []string{line}
+		} else if inVariables {
+			variablesContent = append(variablesContent, line)
+		}
+	}
+	
+	// Process last part and variable
+	if len(partsContent) > 0 {
+		ptl.processPartContent(strings.Join(partsContent, "\n"), template)
+	}
+	if len(variablesContent) > 0 {
+		ptl.processVariableContent(strings.Join(variablesContent, "\n"), template)
+	}
+	
+	return nil
+}
+
+// processPartContent processes a single part content block
+func (ptl *PromptTemplateLoaderImpl) processPartContent(content string, template *interfaces.PromptTemplate) {
+	lines := strings.Split(content, "\n")
+	var partType, partContent string
+	
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "- type:") {
+			partType = strings.TrimSpace(strings.TrimPrefix(line, "- type:"))
+		} else if strings.HasPrefix(line, "content:") {
+			// Extract content after "content:" and handle multi-line content
+			contentStart := strings.Index(line, "content:") + 9
+			partContent = strings.TrimSpace(line[contentStart:])
+			if strings.HasPrefix(partContent, "\"") && strings.HasSuffix(partContent, "\"") {
+				partContent = strings.Trim(partContent, "\"")
+			}
+		}
+	}
+	
+	if partType != "" && partContent != "" {
+		promptPart := &interfaces.PromptPart{
+			Type:    interfaces.PromptPartType(partType),
+			Content: partContent,
+		}
+		template.Parts = append(template.Parts, promptPart)
+	}
+}
+
+// processVariableContent processes a single variable content block
+func (ptl *PromptTemplateLoaderImpl) processVariableContent(content string, template *interfaces.PromptTemplate) {
+	lines := strings.Split(content, "\n")
+	var name, varType, description string
+	required := false
+	
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "- name:") {
+			name = strings.TrimSpace(strings.TrimPrefix(line, "- name:"))
+		} else if strings.HasPrefix(line, "type:") {
+			varType = strings.TrimSpace(strings.TrimPrefix(line, "type:"))
+		} else if strings.HasPrefix(line, "description:") {
+			description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+		} else if strings.HasPrefix(line, "required:") {
+			requiredStr := strings.TrimSpace(strings.TrimPrefix(line, "required:"))
+			required = requiredStr == "true"
+		}
+	}
+	
+	if name != "" {
+		variable := &interfaces.PromptVariable{
+			Name:        name,
+			Type:        varType,
+			Description: description,
+			Required:    required,
+		}
+		if varType == "" {
+			variable.Type = "string"
+		}
+		template.Variables = append(template.Variables, variable)
+	}
 }
 
 // extractFileMetadata extracts metadata from file

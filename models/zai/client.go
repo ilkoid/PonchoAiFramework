@@ -1,3 +1,28 @@
+// Package zai implements Z.AI GLM API client for PonchoFramework
+//
+// This package provides integration with Z.AI's GLM-4.6 and GLM-4.6V models,
+// supporting both text generation and vision analysis capabilities. The client
+// handles authentication, request validation, and provides comprehensive
+// configuration management for fashion industry applications.
+//
+// Key Features:
+// - Multimodal support (text + vision)
+// - Fashion-specific vision analysis
+// - Streaming responses with SSE processing
+// - Tool calling support
+// - Comprehensive error handling and retry logic
+// - Configurable vision parameters (quality, detail, image size)
+//
+// Usage:
+//   client, err := NewZAIClient(config, logger)
+//   if err != nil {
+//       log.Fatal(err)
+//   }
+//   defer client.Close()
+//
+//   // Use with ZAIModel for generation
+//   model := NewZAIModel()
+//   model.Initialize(ctx, configMap)
 package zai
 
 import (
@@ -11,6 +36,11 @@ import (
 )
 
 // ZAIClient represents a client for Z.AI GLM API
+//
+// The client provides comprehensive access to Z.AI's GLM models with support
+// for text generation, vision analysis, and tool calling. It includes built-in
+// authentication, request validation, and configuration management specifically
+// optimized for fashion industry use cases.
 type ZAIClient struct {
 	httpClient   *common.HTTPClient
 	config       *common.CommonModelConfig

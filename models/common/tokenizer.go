@@ -1,3 +1,39 @@
+// Package common provides token counting and usage estimation for AI model
+// providers in PonchoFramework. This file implements comprehensive token management
+// with model-specific configurations, cost estimation, and usage validation.
+//
+// Key Features:
+// - Multi-provider token counting (DeepSeek, Z.AI, OpenAI)
+// - Model-specific token configurations and limits
+// - Cost estimation for different models and providers
+// - Token usage validation and limit checking
+// - Support for text, media, and tool content
+// - Fashion-specific token optimizations
+//
+// Token Counting Methods:
+// - Character-based: tokens = chars * tokens_per_char
+// - Word-based: tokens = words * tokens_per_word
+// - Weighted average: Uses higher estimate for safety
+// - Content-specific: Different rates for text, media, tools
+//
+// Model Configurations:
+// - DeepSeek: 4000-8000 tokens, no vision support
+// - Z.AI GLM-4.6V: 2000 tokens, 85 token vision cost
+// - Z.AI GLM-4.6V-Flash: 4000 tokens, 65 token vision cost
+// - OpenAI GPT-4: 8000 tokens, vision support available
+//
+// Usage Examples:
+//   tokenizer := NewTokenizer(logger)
+//   tokens, _ := tokenizer.CountTokens(text, ProviderDeepSeek, "deepseek-chat")
+//   usage, _ := tokenizer.CountRequestTokens(request, ProviderZAI, "glm-4.6v")
+//   cost, _ := tokenizer.EstimateCost(usage, ProviderDeepSeek, "deepseek-chat")
+//   err := tokenizer.ValidateTokenLimits(request, ProviderZAI, "glm-4.6v")
+//
+// Cost Management:
+// - Per-1K token pricing for different models
+// - Prompt vs completion token separation
+// - Budget tracking and alerts
+// - Provider-specific billing models
 package common
 
 import (

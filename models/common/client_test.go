@@ -2,6 +2,7 @@ package common
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -42,16 +43,121 @@ func TestHTTPClientFactory_GetClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := factory.GetClient(tt.provider)
+			client, err := factory.GetClient(tt.provider)
 
-			if tt.wantErr && client == nil {
-				t.Error("GetClient() returned nil client when error expected")
+			if tt.wantErr && err == nil {
+				t.Error("GetClient() expected error but got none")
+			}
+
+			if !tt.wantErr && err != nil {
+				t.Errorf("GetClient() unexpected error: %v", err)
 			}
 
 			if !tt.wantErr && client == nil {
 				t.Error("GetClient() returned nil client")
 			}
+
+			// Test that client is properly configured
+			if !tt.wantErr && client != nil {
+				config := client.GetConfig()
+				if config == nil {
+					t.Error("GetClient() returned client with nil config")
+				}
+				
+				retryConfig := client.GetRetryConfig()
+				if retryConfig == nil {
+					t.Error("GetClient() returned client with nil retry config")
+				}
+			}
 		})
+	}
+}
+
+func TestHTTPClientFactory_GetClient_ErrorHandling(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *HTTPConfig
+		logger      interfaces.Logger
+		expectError bool
+	}{
+		{
+			name:        "nil config",
+			config:      nil,
+			logger:      interfaces.NewDefaultLogger(),
+			expectError: false, // Should use default config
+		},
+		{
+			name:        "invalid config",
+			config:      &HTTPConfig{Timeout: -1},
+			logger:      interfaces.NewDefaultLogger(),
+			expectError: false, // Should still create client
+		},
+		{
+			name:        "nil logger",
+			config:      &DefaultHTTPConfig,
+			logger:      nil,
+			expectError: false, // Should work without logger
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			factory := NewHTTPClientFactory(tt.config, tt.logger)
+			client, err := factory.GetClient(ProviderCustom)
+
+			if tt.expectError && err == nil {
+				t.Error("Expected error but got none")
+			}
+
+			if !tt.expectError && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			if !tt.expectError && client == nil {
+				t.Error("Expected client but got nil")
+			}
+		})
+	}
+}
+
+func TestHTTPClientFactory_GetClient_ConcurrentAccess(t *testing.T) {
+	logger := interfaces.NewDefaultLogger()
+	factory := NewHTTPClientFactory(&DefaultHTTPConfig, logger)
+
+	// Test concurrent access to GetClient
+	const numGoroutines = 10
+	const numIterations = 5
+
+	done := make(chan bool, numGoroutines)
+	errors := make(chan error, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			defer func() { done <- true }()
+			
+			for j := 0; j < numIterations; j++ {
+				client, err := factory.GetClient(ProviderCustom)
+				if err != nil {
+					errors <- fmt.Errorf("goroutine %d, iteration %d: %v", id, j, err)
+					return
+				}
+				if client == nil {
+					errors <- fmt.Errorf("goroutine %d, iteration %d: nil client", id, j)
+					return
+				}
+			}
+		}(i)
+	}
+
+	// Wait for all goroutines to complete
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// Check for errors
+	close(errors)
+	for err := range errors {
+		t.Error(err)
 	}
 }
 
@@ -383,7 +489,7 @@ func BenchmarkHTTPClientFactory_GetClient(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = factory.GetClient(ProviderCustom)
+		_, _ = factory.GetClient(ProviderCustom)
 	}
 }
 

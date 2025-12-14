@@ -1,5 +1,15 @@
 package config
 
+// This file implements the configuration validator for the PonchoFramework
+// It provides comprehensive validation for all configuration types
+// It validates model configurations (API keys, endpoints, capabilities)
+// It validates tool configurations (dependencies, timeouts, settings)
+// It validates flow configurations (dependencies, parallel execution settings)
+// It includes semantic validation and business rule enforcement
+// It provides detailed error messages for configuration issues
+// It serves as a critical safety mechanism before framework initialization
+// It ensures configuration integrity and prevents runtime errors
+
 import (
 	"fmt"
 	"reflect"

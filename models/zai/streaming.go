@@ -1,3 +1,30 @@
+// Package zai provides streaming support for Z.AI GLM API responses
+//
+// This file implements Server-Sent Events (SSE) processing for Z.AI's streaming
+// API, enabling real-time response generation for text and vision models.
+// The streaming implementation handles chunk parsing, error recovery, and
+// conversion to PonchoFramework's unified streaming format.
+//
+// Key Features:
+// - Server-Sent Events (SSE) stream processing
+// - Real-time chunk parsing and conversion
+// - Error recovery and continuation
+// - Tool calling support in streaming mode
+// - Comprehensive metadata extraction
+// - Graceful stream completion handling
+//
+// Streaming Flow:
+// 1. Initialize stream request with stream: true
+// 2. Process SSE responses line by line
+// 3. Parse JSON chunks and convert to Poncho format
+// 4. Handle [DONE] marker for stream completion
+// 5. Convert tool calls and content deltas
+//
+// Usage:
+//   err := model.GenerateStreaming(ctx, request, func(chunk *PonchoStreamChunk) error {
+//       fmt.Printf("Delta: %s\n", chunk.Delta.Content[0].Text)
+//       return nil
+//   })
 package zai
 
 import (
@@ -12,6 +39,10 @@ import (
 )
 
 // ProcessStreamChunk processes a streaming chunk from Z.AI API
+//
+// This function parses a JSON chunk from Z.AI's streaming API and converts it
+// to a ZAIStreamResponse struct. It handles parsing errors and provides
+// detailed error information for debugging and monitoring.
 func ProcessStreamChunk(chunk []byte) (*ZAIStreamResponse, error) {
 	var streamResp ZAIStreamResponse
 	if err := json.Unmarshal(chunk, &streamResp); err != nil {

@@ -1,3 +1,43 @@
+// Package common provides shared HTTP client functionality with advanced retry logic,
+// connection pooling, and request/response handling for AI model providers.
+// This file implements a production-ready HTTP client with configurable retry strategies,
+// circuit breaker patterns, and comprehensive error handling.
+//
+// Key Features:
+// - Connection pooling with configurable limits
+// - Automatic retry with exponential backoff and jitter
+// - Circuit breaker pattern for fault tolerance
+// - Request/response cloning for retry safety
+// - Configurable timeouts and TLS settings
+// - Support for different content types and body formats
+//
+// Retry Strategies:
+// - Linear: Fixed delay per attempt
+// - Exponential: 2^(attempt-1) * base_delay
+// - Fixed: Always use base delay
+// - Jitter: ±25% random variation to prevent thundering herd
+//
+// HTTP Methods Supported:
+// - GET, POST, PUT, DELETE with automatic retry
+// - JSON marshaling for complex body types
+// - Custom header and query parameter handling
+// - Context-aware cancellation
+//
+// Performance Optimizations:
+// - Connection reuse via pooling
+// - Request cloning to prevent body consumption
+// - Efficient retry delay calculation
+// - Circuit breaker to prevent cascade failures
+//
+// Usage Example:
+//   client, _ := NewHTTPClient(&config, retryConfig)
+//   resp, err := client.Post(ctx, url, "application/json", data)
+//
+// Error Handling:
+// - Distinguishes retryable vs non-retryable errors
+// - Provider-specific retry delays
+// - Comprehensive logging with context
+// - Graceful degradation on failures
 package common
 
 import (
@@ -285,17 +325,27 @@ func NewHTTPClientFactory(config *HTTPConfig, logger interfaces.Logger) *HTTPCli
 }
 
 // GetClient returns an HTTP client for the specified provider
-func (f *HTTPClientFactory) GetClient(provider Provider) *HTTPClient {
+func (f *HTTPClientFactory) GetClient(provider Provider) (*HTTPClient, error) {
 	retryConfig := DefaultRetryConfig
 
 	client, err := NewHTTPClient(f.config, retryConfig)
 	if err != nil {
-		// In a real implementation, you might want to handle this error
-		// For now, we'll return nil
-		return nil
+		if f.logger != nil {
+			f.logger.Error("Failed to create HTTP client",
+				"provider", provider,
+				"error", err,
+			)
+		}
+		return nil, fmt.Errorf("failed to create HTTP client for provider %s: %w", provider, err)
 	}
 
-	return client
+	if f.logger != nil {
+		f.logger.Debug("Created HTTP client successfully",
+			"provider", provider,
+		)
+	}
+
+	return client, nil
 }
 
 // HTTPRequestBuilder helps build HTTP requests

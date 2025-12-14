@@ -1,3 +1,42 @@
+// Package common provides retry mechanisms and circuit breaker patterns for AI model
+// providers in PonchoFramework. This file implements robust retry logic with
+// configurable backoff strategies, circuit breaker pattern, and fault tolerance.
+//
+// Key Features:
+// - Configurable retry strategies (linear, exponential, fixed)
+// - Circuit breaker pattern for fault tolerance
+// - Jitter support to prevent thundering herd
+// - Provider-specific retry delay calculation
+// - Combined retry + circuit breaker implementation
+// - Context-aware cancellation and timeout handling
+//
+// Retry Strategies:
+// - Linear: delay = attempt * base_delay
+// - Exponential: delay = 2^(attempt-1) * base_delay
+// - Fixed: delay = base_delay (constant)
+// - Jitter: ±25% random variation applied to delays
+//
+// Circuit Breaker Pattern:
+// - Closed: Normal operation, requests pass through
+// - Open: All requests fail immediately after threshold
+// - Half-Open: Limited requests test recovery
+// - Automatic reset after timeout period
+//
+// Usage Examples:
+//   executor := NewRetryExecutor(retryConfig, logger)
+//   err := executor.Execute(ctx, operation)
+//
+//   circuit := NewCircuitBreaker(5, 30*time.Second, logger)
+//   err := circuit.Execute(operation)
+//
+//   combined := NewRetryWithCircuitBreaker(retryConfig, 5, 30*time.Second, logger)
+//   err := combined.Execute(ctx, operation)
+//
+// Fault Tolerance:
+// - Prevents cascade failures with circuit breaker
+// - Reduces load on failing services
+// - Provides automatic recovery detection
+// - Configurable failure thresholds and timeouts
 package common
 
 import (

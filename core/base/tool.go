@@ -1,5 +1,14 @@
 package base
 
+// This file provides the base implementation for tools in the PonchoFramework
+// It implements the PonchoBaseTool struct that serves as a foundation for all tool implementations
+// It provides common functionality like initialization, configuration management, and metadata handling
+// It implements the PonchoTool interface with default behaviors
+// It handles tool execution with validation and error handling
+// It provides input/output schema validation capabilities
+// It serves as a reusable base for specific tool implementations (S3, Wildberries, Vision, etc.)
+// It includes logging and metrics collection for tool operations
+
 import (
 	"context"
 	"fmt"

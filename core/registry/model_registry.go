@@ -1,5 +1,14 @@
 package registry
 
+// This file implements the model registry for the PonchoFramework.
+// It provides thread-safe storage and management of AI models.
+// It implements the PonchoModelRegistry interface with full CRUD operations.
+// It supports model registration, retrieval, listing, and removal.
+// It provides concurrent access protection using sync.RWMutex.
+// It includes validation for model registration and operations.
+// It serves as the central repository for all model instances in the framework.
+// It provides logging for all registry operations and error handling.
+
 import (
 	"fmt"
 	"sync"

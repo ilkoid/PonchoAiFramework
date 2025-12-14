@@ -1,8 +1,40 @@
+// Package zai defines types and constants for Z.AI GLM API integration
+//
+// This file contains comprehensive type definitions for Z.AI's API requests
+// and responses, including support for multimodal content, tool calling,
+// and streaming responses. The types are designed to match Z.AI's API
+// specification while providing Go-idiomatic structures.
+//
+// Key Type Categories:
+// - Message types: ZAIMessage, ZAIContentPart, ZAIImageURL
+// - Request/Response: ZAIRequest, ZAIResponse, ZAIStreamResponse
+// - Tool calling: ZAITool, ZAIToolCall, ZAIFunctionCall
+// - Vision support: ZAIVisionConfig, ZAIMedia
+// - Error handling: ZAIError, ZAIErrorDetail
+// - Configuration: ZAIConfig, ZAIResponseFormat
+//
+// Constants:
+// - API endpoints and default values
+// - Content types and formats
+// - Vision configuration parameters
+// - Fashion-specific prompts and settings
+//
+// Usage:
+//   req := &ZAIRequest{
+//       Model: "glm-4.6v",
+//       Messages: []ZAIMessage{...},
+//       Stream: true,
+//   }
 package zai
 
 import "time"
 
 // Z.AI-specific types for API integration
+//
+// The following types define the complete API surface for Z.AI's GLM models,
+// including support for text generation, vision analysis, tool calling, and
+// streaming responses. All types are designed to be JSON-serializable and
+// match Z.AI's API specification.
 
 // ZAIMessage represents a message in Z.AI API format
 type ZAIMessage struct {

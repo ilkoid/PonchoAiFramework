@@ -1,3 +1,186 @@
+// Package deepseek provides DeepSeek API client implementation for PonchoFramework.
+// This file implements a production-ready HTTP client for DeepSeek's OpenAI-compatible API
+// with comprehensive error handling, retry logic, and request validation.
+//
+// Key Features:
+// - OpenAI-compatible API integration
+// - HTTP client with connection pooling and retry logic
+// - Comprehensive request/response validation
+// - Provider-specific configuration management
+// - Structured logging and metrics collection
+// - Health checks and rate limit monitoring
+//
+// API Capabilities:
+// - Text generation with configurable parameters
+// - Tool calling support (function calling)
+// - Streaming responses with SSE processing
+// - Temperature and token limit controls
+// - System role message support
+//
+// Configuration Options:
+// - API key authentication (Bearer token)
+// - Custom base URL support
+// - Model selection (deepseek-chat, deepseek-coder)
+// - Request timeout configuration
+// - Retry and backoff settings
+//
+// Usage Example:
+//   config := &CommonModelConfig{
+//       APIKey: "your-api-key",
+//       Model: "deepseek-chat",
+//       MaxTokens: 4000,
+//       Temperature: 0.7,
+//   }
+//   client, _ := NewDeepSeekClient(config, logger)
+//   resp, err := client.Generate(ctx, request)
+//
+// Error Handling:
+// - Comprehensive validation of requests and responses
+// - Provider-specific error mapping
+// - Retry logic for transient failures
+// - Detailed error logging with context
+// Package deepseek provides DeepSeek model implementation for PonchoFramework.
+// This file implements the PonchoModel interface with DeepSeek API integration,
+// supporting both streaming and non-streaming text generation with tool calling.
+//
+// Key Features:
+// - Full PonchoModel interface implementation
+// - OpenAI-compatible API integration
+// - Streaming and non-streaming generation
+// - Tool calling support with function execution
+// - Request/response format conversion
+// - Comprehensive error handling and logging
+// - Metrics collection and performance monitoring
+//
+// Model Capabilities:
+// - Text generation with configurable parameters
+// - Tool calling (function execution)
+// - Streaming responses with real-time callbacks
+// - System role message support
+// - Temperature and token limit controls
+// - No vision support (text-only model)
+//
+// Request Processing:
+// - PonchoFramework request format validation
+// - Conversion to DeepSeek API format
+// - Tool definition and call conversion
+// - Message format transformation
+// - Parameter validation and limits checking
+//
+// Response Handling:
+// - DeepSeek API response parsing
+// - Conversion to PonchoFramework format
+// - Usage information extraction
+// - Error mapping and context preservation
+// - Stream chunk processing for real-time responses
+//
+// Usage Example:
+//   model := NewDeepSeekModel()
+//   err := model.Initialize(ctx, configMap)
+//   resp, err := model.Generate(ctx, request)
+//   err := model.GenerateStreaming(ctx, request, callback)
+//
+// Integration:
+// - Extends PonchoBaseModel for common functionality
+// - Uses DeepSeekClient for API communication
+// - Implements comprehensive logging and metrics
+// - Supports configuration hot-reloading
+// Package deepseek provides streaming response processing for DeepSeek API integration.
+// This file implements Server-Sent Events (SSE) stream processing with
+// chunk parsing, error handling, and format conversion for real-time responses.
+//
+// Key Features:
+// - Server-Sent Events (SSE) stream processing
+// - DeepSeek stream chunk parsing and validation
+// - Conversion to PonchoFramework stream format
+// - Error handling with stream continuation
+// - Context-aware cancellation support
+// - Metadata extraction and preservation
+//
+// Stream Processing:
+// - SSE format parsing with data: prefix handling
+// - JSON chunk parsing and validation
+// - Delta accumulation for streaming responses
+// - Tool call streaming support
+// - Finish reason detection and handling
+//
+// Data Flow:
+// 1. HTTP response with SSE content-type
+// 2. Line-by-line stream parsing
+// 3. JSON chunk extraction and validation
+// 4. DeepSeek format to PonchoFramework conversion
+// 5. Callback invocation for each chunk
+// 6. Stream completion detection
+//
+// Error Handling:
+// - Graceful handling of malformed JSON chunks
+// - Stream continuation on parsing errors
+// - Context cancellation propagation
+// - Detailed error logging with stream context
+// - Recovery from transient network issues
+//
+// Usage Example:
+//   err := ProcessSSEStream(ctx, response.Body, func(chunk *DeepSeekStreamResponse) error {
+//       ponchoChunk, _ := ConvertStreamChunkToPoncho(chunk)
+//       return streamCallback(ponchoChunk)
+//   })
+//
+// Stream Format Support:
+// - Standard SSE format with data: prefix
+// - [DONE] marker for stream completion
+// - Comment line skipping (lines starting with :)
+// - Empty line handling for robustness
+// Package deepseek provides type definitions for DeepSeek API integration.
+// This file defines all data structures, constants, and types needed for
+// communication with DeepSeek's OpenAI-compatible API, including requests,
+// responses, streaming data, and configuration options.
+//
+// Key Type Categories:
+// - Request Types: Message, tool, and parameter structures
+// - Response Types: Choice, usage, and error structures
+// - Streaming Types: Real-time response and delta structures
+// - Configuration Types: Model settings and API options
+// - Constants: Endpoints, models, and enumeration values
+//
+// API Compatibility:
+// - OpenAI-compatible request/response format
+// - Tool calling support with function definitions
+// - Streaming responses with SSE format
+// - Token usage tracking and reporting
+// - Error response standardization
+//
+// Request Structures:
+// - DeepSeekRequest: Complete API request with all parameters
+// - DeepSeekMessage: Role-based message format
+// - DeepSeekTool: Function definition for tool calling
+// - DeepSeekToolCall: Individual tool call with arguments
+//
+// Response Structures:
+// - DeepSeekResponse: Complete API response with choices and usage
+// - DeepSeekChoice: Individual response choice with message
+// - DeepSeekUsage: Token usage breakdown and statistics
+// - DeepSeekError: Standardized error format with details
+//
+// Streaming Structures:
+// - DeepSeekStreamResponse: Real-time streaming response
+// - DeepSeekStreamChoice: Streaming choice with delta
+// - DeepSeekStreamDelta: Incremental content updates
+// - Finish reason tracking for stream completion
+//
+// Usage Example:
+//   req := &DeepSeekRequest{
+//       Model: "deepseek-chat",
+//       Messages: []DeepSeekMessage{...},
+//       Temperature: &temp,
+//       MaxTokens: &maxTokens,
+//   }
+//   resp, err := client.CreateChatCompletion(ctx, req)
+//
+// Configuration Constants:
+// - Default API endpoints and base URLs
+// - Supported model names and capabilities
+// - Standard parameter limits and defaults
+// - Response format and thinking mode options
 package deepseek
 
 import (
@@ -256,7 +439,7 @@ func (c *DeepSeekClient) LogResponse(resp *interfaces.PonchoModelResponse, reque
 			"completion_tokens", resp.Usage.CompletionTokens,
 			"total_tokens", resp.Usage.TotalTokens,
 			"finish_reason", resp.FinishReason)
-	} else {
+	} else if resp != nil {
 		c.logger.Debug("DeepSeek API response",
 			"request_id", requestID,
 			"duration_ms", duration.Milliseconds(),

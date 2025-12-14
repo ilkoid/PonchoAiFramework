@@ -1,3 +1,31 @@
+// Package zai provides vision processing capabilities for Z.AI GLM models
+//
+// This file implements specialized vision processing for fashion industry applications,
+// leveraging Z.AI's GLM-4.6V model for detailed image analysis. The VisionProcessor
+// provides high-level APIs for fashion image analysis, feature extraction, and
+// multimodal content processing with support for various image formats and sources.
+//
+// Key Features:
+// - Fashion-specific image analysis and classification
+// - Support for multiple image formats (JPEG, PNG, GIF, WebP)
+// - Base64 and URL-based image processing
+// - Configurable vision parameters (quality, detail, size)
+// - Structured fashion analysis with clothing item detection
+// - Color, style, and material extraction
+// - Image downloading and caching support
+//
+// Fashion Analysis Capabilities:
+// - Clothing item detection and classification
+// - Color palette extraction
+// - Style and season identification
+// - Material and accessory recognition
+// - Confidence scoring and metadata
+//
+// Usage:
+//   processor := NewVisionProcessor(model, logger, config)
+//   analysis, err := processor.AnalyzeFashionImage(ctx, imageURL)
+//   // or from base64:
+//   analysis, err := processor.AnalyzeFashionImageFromBase64(ctx, data, mimeType)
 package zai
 
 import (
@@ -14,6 +42,11 @@ import (
 )
 
 // VisionProcessor handles vision-specific functionality for Z.AI GLM models
+//
+// This struct provides comprehensive vision processing capabilities specifically
+// designed for fashion industry applications. It integrates with Z.AI's GLM-4.6V
+// model to provide detailed image analysis, clothing item detection, and fashion
+// attribute extraction with configurable parameters and error handling.
 type VisionProcessor struct {
 	model  *ZAIModel
 	logger interfaces.Logger

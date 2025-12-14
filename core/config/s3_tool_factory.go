@@ -1,5 +1,23 @@
 package config
 
+// S3ToolFactory implements the S3 tool factory for the PonchoFramework.
+// It provides specialized factory methods for creating S3-related tools with
+// support for article importer tools designed for fashion data processing.
+// The factory handles S3 client initialization with proper credentials and
+// configuration, providing bucket browsing and file management tools.
+//
+// This serves as a specialized factory for Yandex Cloud S3 integration,
+// including comprehensive error handling for S3 connection and configuration
+// issues. It enables dynamic S3 tool loading from configuration files and
+// abstracts S3 tool creation complexity from the main framework.
+//
+// Supported tool types:
+// - article_importer: Imports fashion articles and images from S3 storage
+// - s3_storage: Generic S3 storage operations (planned)
+//
+// The factory validates tool configurations, handles retry logic, caching
+// settings, and custom parameters specific to fashion industry workflows.
+
 import (
 	"fmt"
 

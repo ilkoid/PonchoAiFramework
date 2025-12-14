@@ -1,5 +1,15 @@
 package config
 
+// This file implements the tool factory for the PonchoFramework.
+// It provides factory methods for creating tool instances from configuration.
+// It supports multiple tool types (S3, Wildberries, Vision, etc.).
+// It handles tool initialization with proper configuration and dependencies.
+// It provides tool capability detection and validation.
+// It serves as the central mechanism for tool instantiation.
+// It includes error handling for unsupported tool types.
+// It enables dynamic tool loading from configuration files.
+// It abstracts tool creation complexity from the main framework.
+
 import (
 	"fmt"
 	"time"

@@ -1,3 +1,26 @@
+// Package prompts provides comprehensive type definitions for prompt management system
+//
+// Key functionality:
+// • Extended type definitions building on core interfaces
+// • Configuration structures for prompt system behavior
+// • Fashion-specific data structures for industry specialization
+// • Validation and execution result types with detailed metadata
+// • Performance metrics and statistics tracking
+// • Media processing and variable handling interfaces
+//
+// Key relationships:
+// • Extends interfaces package types with implementation-specific details
+// • Provides configuration structures used by manager, parser, validator
+// • Defines fashion domain models for Wildberries marketplace integration
+// • Implements validation result types with enhanced error context
+// • Provides execution context and options for fine-grained control
+//
+// Design patterns:
+// • Builder pattern for execution options and retry configurations
+// • Strategy pattern for media processing and variable handling
+// • Observer pattern for metrics collection and performance tracking
+// • Domain-driven design with fashion-specific entities and value objects
+
 package prompts
 
 import (

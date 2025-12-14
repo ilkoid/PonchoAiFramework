@@ -1,3 +1,28 @@
+// Package prompts provides comprehensive validation for prompt templates and variables
+//
+// Key functionality:
+// • Template structure validation with configurable strictness levels
+// • Variable type checking and validation rule enforcement
+// • Fashion-specific context validation for marketplace integration
+// • Syntax validation for template content and variable references
+// • Validation result reporting with detailed error context
+// • Support for custom validation rules and patterns
+//
+// Key relationships:
+// • Implements PromptValidator interface from core interfaces
+// • Validates PromptTemplate structures created by parser package
+// • Integrates with manager package for load-time and execution-time validation
+// • Provides validation for executor package before template execution
+// • Supports fashion domain validation for Wildberries marketplace requirements
+// • Extends core validation with fashion-specific rules and constraints
+//
+// Design patterns:
+// • Strategy pattern for different validation types (structure, syntax, variables)
+// • Chain of responsibility for validation rule execution
+// • Builder pattern for validation result construction
+// • Template method pattern for validation workflow
+// • Specification pattern for validation rule composition
+
 package prompts
 
 import (

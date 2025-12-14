@@ -1,3 +1,21 @@
+// Package interfaces provides prompt management system for PonchoFramework
+//
+// Key responsibilities:
+// - Define prompt template management interfaces
+// - Support fashion-specific prompt contexts
+// - Enable template validation and execution
+//
+// Core interfaces:
+// - PromptManager: Template loading and execution orchestration
+// - PromptExecutor: Template execution with variable substitution
+// - PromptValidator: Template syntax and semantic validation
+// - PromptCache: LRU caching for template performance
+//
+// Implementation notes:
+// - Supports V1 format with {{role "..."}} syntax
+// - Fashion-specific context for industry workflows
+// - Thread-safe caching with configurable TTL
+// - Comprehensive validation with detailed error reporting
 package interfaces
 
 import (

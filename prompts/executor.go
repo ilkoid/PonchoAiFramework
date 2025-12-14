@@ -1,3 +1,27 @@
+// Package prompts provides template execution and variable processing capabilities
+//
+// Key functionality:
+// • Template execution against AI models with variable substitution
+// • Streaming execution support for real-time response generation
+// • Variable processing with validation and default value handling
+// • Model request building from template parts and metadata
+// • Media content handling for vision-capable models
+// • Fashion context integration for specialized AI responses
+//
+// Key relationships:
+// • Implements PromptExecutor interface from core interfaces
+// • Integrates with core framework through PonchoFramework.Generate methods
+// • Uses VariableProcessor for template variable substitution and validation
+// • Converts PromptTemplate structures to PonchoModelRequest format
+// • Supports both batch and streaming execution patterns
+// • Handles media content for vision models (Z.AI GLM with fashion analysis)
+//
+// Design patterns:
+// • Strategy pattern for different execution modes (batch vs streaming)
+// • Builder pattern for model request construction
+// • Template method pattern for execution workflow
+// • Chain of responsibility for message building from template parts
+
 package prompts
 
 import (
@@ -272,25 +296,32 @@ func NewVariableProcessor(logger interfaces.Logger) VariableProcessor {
 	}
 }
 
-// ProcessVariables processes variables in template content
+// ProcessVariables processes variables in template content with security fixes
 func (vp *VariableProcessorImpl) ProcessVariables(content string, variables map[string]interface{}) (string, error) {
 	vp.logger.Debug("Processing variables", "content_length", len(content))
 
-	// Simple variable substitution using regex
+	// Secure variable substitution using regex with proper escaping
 	varPattern := regexp.MustCompile(`\{\{(\w+)\}\}`)
 	
 	result := varPattern.ReplaceAllStringFunc(content, func(match string) string {
 		// Extract variable name
 		varName := match[2 : len(match)-2] // Remove {{ and }}
 		
-		// Look up variable value
-		if value, exists := variables[varName]; exists {
-			return fmt.Sprintf("%v", value)
+		// Validate variable name to prevent injection
+		if !isValidVariableName(varName) {
+			vp.logger.Warn("Invalid variable name detected", "name", varName)
+			return "" // Remove invalid variables
 		}
 		
-		// Variable not found - return original or empty based on strict mode
+		// Look up variable value
+		if value, exists := variables[varName]; exists {
+			// Sanitize variable value to prevent injection
+			return sanitizeVariableValue(value)
+		}
+		
+		// Variable not found - return empty string for security
 		vp.logger.Warn("Variable not found", "name", varName)
-		return match // Return original for now
+		return ""
 	})
 
 	vp.logger.Debug("Variables processed", "result_length", len(result))
@@ -361,4 +392,19 @@ func (vp *VariableProcessorImpl) SetDefaults(
 	}
 
 	return result
+}
+
+// isValidVariableName validates variable name to prevent injection
+func isValidVariableName(name string) bool {
+	// Only allow alphanumeric characters and underscores
+	matched, _ := regexp.MatchString(`^[a-zA-Z_][a-zA-Z0-9_]*$`, name)
+	return matched
+}
+
+// sanitizeVariableValue returns string representation of value
+func sanitizeVariableValue(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", value)
 }

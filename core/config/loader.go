@@ -1,5 +1,15 @@
 package config
 
+// ConfigLoader implements the configuration loading system for PonchoFramework.
+// It handles loading configuration from YAML and JSON files with automatic format detection.
+// Provides environment variable substitution for sensitive data using ${VAR_NAME} syntax.
+// Supports multiple configuration file paths with intelligent merging and fallback mechanisms.
+// Includes file watching capabilities for hot-reload functionality (planned feature).
+// Provides comprehensive validation and error handling for all configuration operations.
+// Serves as the primary mechanism for loading both initial and runtime framework configuration.
+// Handles configuration updates with proper logging and error recovery.
+// Supports model-specific configuration parsing with type validation and default values.
+
 import (
 	"encoding/json"
 	"fmt"

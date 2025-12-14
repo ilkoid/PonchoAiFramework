@@ -1,3 +1,47 @@
+// Package common provides unified error types and handling for AI model providers
+// in PonchoFramework. This file implements a comprehensive error system
+// with provider-specific error codes, retry logic, and detailed error context.
+//
+// Key Features:
+// - Unified error type for all model providers
+// - Provider-specific error codes and messages
+// - Automatic retryability determination
+// - HTTP status code to error mapping
+// - Error wrapping with cause preservation
+// - Structured error information for debugging
+//
+// Error Categories:
+// - Configuration Errors: Invalid config, missing API keys
+// - Network Errors: Timeouts, connection issues, rate limits
+// - API Errors: Invalid requests, authorization, server errors
+// - Model-Specific Errors: Model not found, token limits, content filtering
+// - Streaming Errors: Stream interruptions, parsing errors
+//
+// Error Codes:
+// - INVALID_CONFIG: Configuration validation failed
+// - RATE_LIMIT_ERROR: API rate limit exceeded (retryable)
+// - TOKEN_LIMIT_EXCEEDED: Model token limit exceeded
+// - CONTENT_FILTERED: Content blocked by safety filters
+// - SERVER_ERROR: Internal server error (retryable)
+//
+// Retry Logic:
+// - Automatic retryability determination based on error type
+// - HTTP status code analysis for retry decisions
+// - Provider-specific retry strategies
+// - Circuit breaker integration support
+//
+// Usage Example:
+//   err := NewRateLimitError("Too many requests", "deepseek", "deepseek-chat")
+//   if IsRetryableModelError(err) {
+//       // implement retry logic
+//   }
+//
+// Error Context:
+// - Provider and model information
+// - HTTP status codes
+// - Retryability flags
+// - Detailed error messages
+// - Optional error details and causes
 package common
 
 import (

@@ -1,0 +1,186 @@
+# Alert Rules for PonchoAI Framework
+groups:
+  - name: ponchoai.rules
+    rules:
+      # Application Health Alerts
+      - alert: ApplicationDown
+        expr: up{job="ponchoai-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: ponchoai-app
+        annotations:
+          summary: "PonchoAI Application is down"
+          description: "PonchoAI application has been down for more than 1 minute."
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: ponchoai-app
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: ponchoai-app
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s over the last 5 minutes."
+
+      # Model-specific Alerts
+      - alert: ModelHighLatency
+        expr: model_request_duration_seconds{quantile="0.95"} > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: ponchoai-app
+          component: models
+        annotations:
+          summary: "Model experiencing high latency"
+          description: "Model {{ $labels.model }} has 95th percentile latency of {{ $value }}s."
+
+      - alert: ModelHighErrorRate
+        expr: rate(model_requests_failed_total[5m]) / rate(model_requests_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: critical
+          service: ponchoai-app
+          component: models
+        annotations:
+          summary: "Model high error rate"
+          description: "Model {{ $labels.model }} has error rate of {{ $value | humanizePercentage }}."
+
+      - alert: RateLimitExceeded
+        expr: rate(rate_limit_exceeded_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: ponchoai-app
+        annotations:
+          summary: "Rate limit frequently exceeded"
+          description: "Rate limit exceeded {{ $value }} times per second over the last 5 minutes."
+
+      # Resource Usage Alerts
+      - alert: HighMemoryUsage
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: ponchoai-app
+        annotations:
+          summary: "High memory usage"
+          description: "Container {{ $labels.name }} is using {{ $value | humanizePercentage }} of memory."
+
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: ponchoai-app
+        annotations:
+          summary: "High CPU usage"
+          description: "Container {{ $labels.name }} is using {{ $value | humanizePercentage }} of CPU."
+
+      # Cache Alerts
+      - alert: LowCacheHitRate
+        expr: cache_hit_rate < 0.8
+        for: 10m
+        labels:
+          severity: warning
+          service: ponchoai-app
+          component: cache
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} over the last 10 minutes."
+
+      - alert: HighCacheEvictionRate
+        expr: rate(cache_evictions_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: ponchoai-app
+          component: cache
+        annotations:
+          summary: "High cache eviction rate"
+          description: "Cache is evicting {{ $value }} items per second."
+
+      # Database/Storage Alerts
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 1 minute."
+
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis high memory usage"
+          description: "Redis is using {{ $value | humanizePercentage }} of memory."
+
+      # Infrastructure Alerts
+      - alert: DiskSpaceHigh
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: infrastructure
+        annotations:
+          summary: "Low disk space"
+          description: "Filesystem {{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free space."
+
+      - alert: NetworkConnectionErrors
+        expr: rate(network_connections_failed_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: ponchoai-app
+        annotations:
+          summary: "High network connection errors"
+          description: "{{ $value }} failed connections per second over the last 5 minutes."
+
+      # Business Logic Alerts
+      - alert: LowModelAvailability
+        expr: model_availability < 0.95
+        for: 3m
+        labels:
+          severity: critical
+          service: ponchoai-app
+          component: models
+        annotations:
+          summary: "Low model availability"
+          description: "Model {{ $labels.model }} availability is {{ $value | humanizePercentage }}."
+
+      - alert: TokenUsageHigh
+        expr: rate(model_tokens_used_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: info
+          service: ponchoai-app
+          component: billing
+        annotations:
+          summary: "High token usage"
+          description: "Using {{ $value }} tokens per second over the last 5 minutes."
+
+      - alert: UnusualTrafficPattern
+        expr: rate(http_requests_total[5m]) > (rate(http_requests_total[1h] offset 1d) * 2)
+        for: 10m
+        labels:
+          severity: warning
+          service: ponchoai-app
+        annotations:
+          summary: "Unusual traffic pattern detected"
+          description: "Current request rate is twice the normal rate from yesterday."

@@ -1,3 +1,27 @@
+// Package prompts provides comprehensive prompt management system for PonchoFramework
+//
+// Key functionality:
+// • Central orchestration of prompt template lifecycle (load, validate, execute, cache)
+// • Integration with framework's model registry for AI model execution
+// • Support for both batch and streaming prompt execution
+// • Template validation with configurable strictness levels
+// • Metrics collection for performance monitoring and debugging
+// • Thread-safe operations with concurrent access protection
+//
+// Key relationships:
+// • Depends on interfaces package for core type definitions and framework integration
+// • Uses parser package for template loading and V1 format support
+// • Uses validator package for template and variable validation
+// • Uses executor package for actual prompt execution against AI models
+// • Uses cache package for template caching and performance optimization
+// • Integrates with core framework through PonchoFramework interface
+//
+// Design patterns:
+// • Registry pattern for template storage and management
+// • Strategy pattern for different template formats (V1, YAML, JSON)
+// • Observer pattern for metrics collection and monitoring
+// • Builder pattern for request construction and execution
+
 package prompts
 
 import (

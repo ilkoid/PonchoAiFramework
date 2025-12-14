@@ -1,3 +1,39 @@
+// Package common provides performance monitoring and metrics collection for AI model
+// providers in PonchoFramework. This file implements comprehensive metrics tracking
+// with provider-specific monitoring, system resource tracking, and health status.
+//
+// Key Features:
+// - Request-level metrics tracking (latency, tokens, success rates)
+// - Provider-specific performance monitoring
+// - System resource monitoring (memory, CPU, goroutines)
+// - Configurable performance thresholds and alerts
+// - Real-time health status monitoring
+// - Export capabilities for external monitoring systems
+//
+// Metrics Collected:
+// - Request Metrics: Count, success rate, error rate, latency
+// - Token Usage: Prompt tokens, completion tokens, total tokens
+// - Provider Metrics: Per-provider performance and availability
+// - System Metrics: Memory usage, CPU, goroutines, GC stats
+// - Error Tracking: Error types, provider distribution, trends
+//
+// Performance Thresholds:
+// - Latency Threshold: Alert when response times exceed limit
+// - Error Rate Threshold: Alert when error rate exceeds percentage
+// - Resource Usage: Monitor memory and CPU consumption
+// - Provider Health: Track availability and performance degradation
+//
+// Usage Example:
+//   config := DefaultMetricsConfig()
+//   collector := NewMetricsCollector(config, logger)
+//   collector.RecordRequest(&ModelRequestMetrics{...})
+//   metrics := collector.GetGlobalMetrics()
+//
+// Monitoring Integration:
+// - Prometheus-compatible metric export
+// - Structured logging with correlation IDs
+// - Health check endpoints
+// - Performance alerting
 package common
 
 import (

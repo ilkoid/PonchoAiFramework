@@ -1,3 +1,21 @@
+// Package interfaces provides core type definitions for PonchoFramework
+//
+// Key responsibilities:
+// - Define all data structures used throughout the framework
+// - Establish type system for models, tools, and flows
+// - Provide configuration and metrics structures
+//
+// Core types:
+// - PonchoModelRequest/Response: AI model interaction types
+// - PonchoMessage/ContentPart: Conversation message structures
+// - PonchoFrameworkConfig: Complete configuration schema
+// - PonchoMetrics: Performance and health monitoring types
+//
+// Implementation notes:
+// - Supports multimodal content (text, media, tools)
+// - Comprehensive configuration with environment variables
+// - Detailed metrics collection for monitoring
+// - Fashion-specific configurations and contexts
 package interfaces
 
 import "time"

@@ -1,5 +1,16 @@
 package registry
 
+// Flow Registry Implementation
+// This file implements the flow registry for the PonchoFramework.
+// It provides thread-safe storage and management of flows.
+// It implements the PonchoFlowRegistry interface with full CRUD operations.
+// It supports flow registration, retrieval, listing, and removal.
+// It provides dependency validation between flows, models, and tools.
+// It includes concurrent access protection using sync.RWMutex.
+// It validates flow dependencies against available registries.
+// It serves as the central repository for all flow instances in the framework.
+// It provides comprehensive logging for all registry operations and error handling.
+
 import (
 	"fmt"
 	"sync"

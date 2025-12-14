@@ -1,10 +1,23 @@
 package config
 
+// ModelFactory implements the model factory for the PonchoFramework.
+// It provides factory methods for creating AI model instances from configuration.
+// It supports multiple model providers (DeepSeek, Z.AI, etc.).
+// It handles model initialization with proper configuration and credentials.
+// It provides model capability detection and validation.
+// It serves as the central mechanism for model instantiation.
+// It includes error handling for unsupported model types.
+// It enables dynamic model loading from configuration files.
+// It abstracts model creation complexity from the main framework.
+
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
+	"github.com/ilkoid/PonchoAiFramework/models/deepseek"
+	"github.com/ilkoid/PonchoAiFramework/models/zai"
 )
 
 // DeepSeekModelFactory creates DeepSeek model instances
@@ -21,19 +34,33 @@ func (f *DeepSeekModelFactory) CreateModel(config *interfaces.ModelConfig) (inte
 		return nil, fmt.Errorf("invalid provider for DeepSeek factory: %s", config.Provider)
 	}
 
-	// TODO: Implement actual DeepSeek model creation in Phase 2
-	// For now, return a placeholder to indicate configuration is valid
-	return &PlaceholderModel{
-		name:     config.ModelName,
-		provider: config.Provider,
-		capabilities: &interfaces.ModelCapabilities{
-			Streaming: config.Supports != nil && config.Supports.Streaming,
-			Tools:     config.Supports != nil && config.Supports.Tools,
-			Vision:    config.Supports != nil && config.Supports.Vision,
-			System:    config.Supports != nil && config.Supports.System,
-			JSONMode:  config.Supports != nil && config.Supports.JSONMode,
-		},
-	}, nil
+	// Import and create actual DeepSeek model
+	model := deepseek.NewDeepSeekModel()
+	
+	// Convert ModelConfig to map[string]interface{} for Initialize
+	configMap := map[string]interface{}{
+		"api_key":     config.APIKey,
+		"model_name":   config.ModelName,
+		"max_tokens":   config.MaxTokens,
+		"temperature":  config.Temperature,
+		"timeout":      config.Timeout,
+		"base_url":     config.BaseURL,
+		"supports":     config.Supports,
+	}
+	
+	// Add custom parameters if any
+	if config.CustomParams != nil {
+		for k, v := range config.CustomParams {
+			configMap[k] = v
+		}
+	}
+	
+	// Initialize model with the provided config
+	if err := model.Initialize(context.Background(), configMap); err != nil {
+		return nil, fmt.Errorf("failed to initialize DeepSeek model: %w", err)
+	}
+	
+	return model, nil
 }
 
 // ValidateConfig validates DeepSeek-specific configuration
@@ -213,19 +240,38 @@ func (f *ZAIModelFactory) CreateModel(config *interfaces.ModelConfig) (interface
 		return nil, fmt.Errorf("invalid provider for Z.AI factory: %s", config.Provider)
 	}
 
-	// TODO: Implement actual Z.AI model creation in Phase 2
-	// For now, return a placeholder to indicate configuration is valid
-	return &PlaceholderModel{
-		name:     config.ModelName,
-		provider: config.Provider,
-		capabilities: &interfaces.ModelCapabilities{
-			Streaming: config.Supports != nil && config.Supports.Streaming,
-			Tools:     config.Supports != nil && config.Supports.Tools,
-			Vision:    config.Supports != nil && config.Supports.Vision,
-			System:    config.Supports != nil && config.Supports.System,
-			JSONMode:  config.Supports != nil && config.Supports.JSONMode,
-		},
-	}, nil
+	// Create appropriate Z.AI model based on model name
+	var model interfaces.PonchoModel
+	if strings.Contains(strings.ToLower(config.ModelName), "vision") || strings.Contains(strings.ToLower(config.ModelName), "v") {
+		model = zai.NewZAIVisionModel()
+	} else {
+		model = zai.NewZAIModel()
+	}
+	
+	// Convert ModelConfig to map[string]interface{} for Initialize
+	configMap := map[string]interface{}{
+		"api_key":     config.APIKey,
+		"model_name":   config.ModelName,
+		"max_tokens":   config.MaxTokens,
+		"temperature":  config.Temperature,
+		"timeout":      config.Timeout,
+		"base_url":     config.BaseURL,
+		"supports":     config.Supports,
+	}
+	
+	// Add custom parameters if any
+	if config.CustomParams != nil {
+		for k, v := range config.CustomParams {
+			configMap[k] = v
+		}
+	}
+	
+	// Initialize model with the provided config
+	if err := model.Initialize(context.Background(), configMap); err != nil {
+		return nil, fmt.Errorf("failed to initialize Z.AI model: %w", err)
+	}
+	
+	return model, nil
 }
 
 // ValidateConfig validates Z.AI-specific configuration
@@ -629,64 +675,64 @@ type PlaceholderModel struct {
 	capabilities *interfaces.ModelCapabilities
 }
 
-// Name returns the model name
+// Name returns model name
 func (p *PlaceholderModel) Name() string {
 	return p.name
 }
 
-// Provider returns the model provider
+// Provider returns model provider
 func (p *PlaceholderModel) Provider() string {
 	return p.provider
 }
 
-// MaxTokens returns the maximum tokens supported
+// MaxTokens returns maximum tokens supported
 func (p *PlaceholderModel) MaxTokens() int {
 	return 4000 // Default placeholder value
 }
 
-// DefaultTemperature returns the default temperature setting
+// DefaultTemperature returns default temperature setting
 func (p *PlaceholderModel) DefaultTemperature() float32 {
 	return 0.7 // Default placeholder value
 }
 
-// Initialize initializes the model (placeholder implementation)
+// Initialize initializes model (placeholder implementation)
 func (p *PlaceholderModel) Initialize(ctx context.Context, config map[string]interface{}) error {
 	// Placeholder implementation - does nothing
 	return nil
 }
 
-// Shutdown shuts down the model (placeholder implementation)
+// Shutdown shuts down model (placeholder implementation)
 func (p *PlaceholderModel) Shutdown(ctx context.Context) error {
 	// Placeholder implementation - does nothing
 	return nil
 }
 
-// Temperature returns the temperature setting (deprecated, use DefaultTemperature)
+// Temperature returns temperature setting (deprecated, use DefaultTemperature)
 func (p *PlaceholderModel) Temperature() float32 {
 	return p.DefaultTemperature()
 }
 
-// SupportsStreaming returns whether the model supports streaming
+// SupportsStreaming returns whether model supports streaming
 func (p *PlaceholderModel) SupportsStreaming() bool {
 	return p.capabilities != nil && p.capabilities.Streaming
 }
 
-// SupportsTools returns whether the model supports tools
+// SupportsTools returns whether model supports tools
 func (p *PlaceholderModel) SupportsTools() bool {
 	return p.capabilities != nil && p.capabilities.Tools
 }
 
-// SupportsVision returns whether the model supports vision
+// SupportsVision returns whether model supports vision
 func (p *PlaceholderModel) SupportsVision() bool {
 	return p.capabilities != nil && p.capabilities.Vision
 }
 
-// SupportsSystemRole returns whether the model supports system role
+// SupportsSystemRole returns whether model supports system role
 func (p *PlaceholderModel) SupportsSystemRole() bool {
 	return p.capabilities != nil && p.capabilities.System
 }
 
-// SupportsJSONMode returns whether the model supports JSON mode
+// SupportsJSONMode returns whether model supports JSON mode
 func (p *PlaceholderModel) SupportsJSONMode() bool {
 	return p.capabilities != nil && p.capabilities.JSONMode
 }

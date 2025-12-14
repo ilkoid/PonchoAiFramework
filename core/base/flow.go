@@ -1,5 +1,14 @@
 package base
 
+// This file provides the base implementation for flows in the PonchoFramework
+// It implements the PonchoBaseFlow struct that serves as a foundation for all flow implementations
+// It provides common functionality like initialization, configuration management, and metadata handling
+// It implements the PonchoFlow interface with default behaviors
+// It handles flow execution with dependency validation and error handling
+// It provides support for both sequential and parallel execution patterns
+// It serves as a reusable base for specific flow implementations (article processor, mini-agent, etc.)
+// It includes streaming support and comprehensive logging for flow operations
+
 import (
 	"context"
 	"fmt"

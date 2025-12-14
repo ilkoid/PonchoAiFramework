@@ -1,3 +1,44 @@
+// Package common provides content conversion and media processing utilities for
+// AI model providers in PonchoFramework. This file implements format conversion
+// between PonchoFramework's unified content format and provider-specific formats,
+// with support for multimodal content (text, images, tools) and media processing.
+//
+// Key Features:
+// - Bidirectional conversion between PonchoFramework and provider formats
+// - Multimodal content support (text + images + tools)
+// - Media processing with base64 encoding and validation
+// - Provider-specific format handling (DeepSeek, Z.AI, OpenAI)
+// - Tool definition and tool call conversion
+// - Fashion-specific media processing capabilities
+//
+// Content Types Supported:
+// - Text: Plain text content with role-based messaging
+// - Media: Images and other media with URL/base64 support
+// - Tool: Tool calls and tool definitions with arguments
+// - Multimodal: Combinations of text, media, and tools
+//
+// Provider Formats:
+// - DeepSeek: OpenAI-compatible format with tool calling
+// - Z.AI: Custom format with vision support and multimodal arrays
+// - OpenAI: Standard OpenAI API format
+//
+// Media Processing:
+// - Image validation (JPEG, PNG, WebP, GIF)
+// - Base64 encoding for data URLs
+// - MIME type detection and validation
+// - URL validation for remote media
+// - Fashion-specific optimizations
+//
+// Usage Example:
+//   converter := NewContentConverter(logger)
+//   providerMsgs, _ := converter.ConvertToProviderFormat(messages, ProviderDeepSeek)
+//   media, _ := mediaProcessor.ProcessImage(imageData, "image/jpeg")
+//
+// Error Handling:
+// - Comprehensive validation of content formats
+// - Graceful handling of unsupported types
+// - Detailed error messages with context
+// - Provider-specific error mapping
 package common
 
 import (

@@ -1,3 +1,44 @@
+// Package common provides error handling and retry logic for AI model providers
+// in PonchoFramework. This file implements provider-specific error handling,
+// retry delay calculation, and error classification for robust model operations.
+//
+// Key Features:
+// - Provider-specific error handling and retry strategies
+// - Automatic retry delay calculation based on error types
+// - Error classification (retryable vs non-retryable)
+// - Provider-aware error wrapping and context
+// - Comprehensive error logging with structured data
+//
+// Error Types Handled:
+// - Rate Limit Errors: Exponential backoff with provider-specific delays
+// - Server Errors: Longer backoff for temporary failures
+// - Timeout Errors: Moderate backoff for network timeouts
+// - Network Errors: Linear backoff for connection issues
+// - Authentication Errors: No retry (configuration issue)
+//
+// Provider-Specific Strategies:
+// - DeepSeek: Standard exponential backoff for rate limits
+// - Z.AI: Longer delays for rate limits (2x base)
+// - Custom: Configurable retry strategies
+//
+// Retry Delay Calculation:
+// - Rate Limit: Exponential backoff (2^attempt * base)
+// - Server Error: Linear backoff (attempt * multiplier)
+// - Timeout: Fixed moderate delay
+// - Network: Linear backoff with shorter intervals
+//
+// Usage Example:
+//   handler := NewErrorHandler(ProviderDeepSeek, logger)
+//   if handler.IsRetryableError(err) {
+//       delay := handler.GetRetryDelay(err, attempt)
+//       // retry after delay
+//   }
+//
+// Error Classification:
+// - Automatic detection of retryable errors
+// - Provider-specific error code mapping
+// - HTTP status code analysis
+// - Context preservation for debugging
 package common
 
 import (

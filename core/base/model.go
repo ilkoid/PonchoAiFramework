@@ -1,5 +1,15 @@
 package base
 
+// This file provides the base implementation for AI models in the PonchoFramework.
+// It implements the PonchoBaseModel struct that serves as a foundation for all model implementations.
+// It provides common functionality like initialization, configuration management, and metadata handling.
+// It implements the PonchoModel interface with default behaviors for model operations.
+// It handles model capabilities (streaming, tools, vision, system role) through capability flags.
+// It provides validation and error handling for model operations and requests.
+// It serves as a reusable base for specific model implementations (DeepSeek, Z.AI, etc.).
+// Concrete models should embed this struct and override the Generate/GenerateStreaming methods.
+// The base implementation includes thread-safe configuration access and lifecycle management.
+
 import (
 	"context"
 	"fmt"

@@ -1,5 +1,24 @@
 package core
 
+// PonchoFrameworkImpl - Main framework implementation and central orchestrator
+//
+// This file contains the core implementation of the PonchoFramework, serving as the
+// central orchestrator for the entire PonchoFramework system. It manages the
+// primary registries for models, tools, and flows, providing unified access to all
+// framework components.
+//
+// Key responsibilities:
+// - Registry management for models, tools, and flows with thread-safe operations
+// - Lifecycle management with Start/Stop methods for graceful initialization
+// - Configuration management integration with dynamic loading and validation
+// - Metrics collection and monitoring for all framework operations
+// - Request orchestration for model generation, tool execution, and flow processing
+// - Health monitoring and status reporting for system observability
+//
+// This implementation follows the PonchoFramework interface and provides the
+// foundation for all AI operations within the framework, coordinating between
+// different components while maintaining performance and reliability.
+
 import (
 	"context"
 	"fmt"
@@ -483,11 +502,16 @@ func (pf *PonchoFrameworkImpl) recordGenerationMetrics(model string, duration in
 
 	modelMetrics := metrics.ByModel[model]
 	modelMetrics.Requests++
-	if success {
-		modelMetrics.SuccessRate = float64(modelMetrics.Requests-1) / float64(modelMetrics.Requests)
-	}
-	modelMetrics.TotalTokens += int64(tokens)
 
+	// Calculate success rate properly for both success and failure cases
+	previousSuccesses := int64(modelMetrics.SuccessRate * float64(modelMetrics.Requests-1))
+	if success {
+		previousSuccesses++
+	}
+	modelMetrics.SuccessRate = float64(previousSuccesses) / float64(modelMetrics.Requests)
+	
+	modelMetrics.TotalTokens += int64(tokens)
+	
 	// Update average latency (simplified)
 	modelMetrics.AvgLatency = (modelMetrics.AvgLatency + float64(duration)) / 2.0
 }

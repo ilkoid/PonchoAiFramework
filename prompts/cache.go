@@ -1,3 +1,28 @@
+// Package prompts provides LRU caching system for prompt templates
+//
+// Key functionality:
+// • Thread-safe LRU cache with configurable size limits
+// • Template caching with access time tracking and eviction
+// • Cache statistics and performance monitoring
+// • Template invalidation and cache clearing operations
+// • Integration with prompt manager for transparent caching
+// • Memory-efficient storage with automatic cleanup
+//
+// Key relationships:
+// • Implements PromptCache interface from core interfaces
+// • Integrates with manager package for template lifecycle management
+// • Provides caching layer between parser and template storage
+// • Supports cache statistics collection for performance monitoring
+// • Used by executor package for cached template access
+// • Designed for high-throughput template access scenarios
+//
+// Design patterns:
+// • Cache pattern with LRU eviction strategy
+// • Proxy pattern for transparent template access
+// • Observer pattern for cache statistics collection
+// • Singleton pattern for cache instance management
+// • Template method pattern for cache operations workflow
+
 package prompts
 
 import (
@@ -11,10 +36,13 @@ import (
 // PromptCacheImpl implements a simple LRU cache for prompt templates
 type PromptCacheImpl struct {
 	maxSize int
+	ttl     time.Duration
 	items   map[string]*cacheItem
 	order   *list.List
 	mutex   sync.RWMutex
 	logger  interfaces.Logger
+	hits    int64
+	misses  int64
 }
 
 // cacheItem represents an item in the cache
@@ -28,8 +56,14 @@ type cacheItem struct {
 
 // NewPromptCache creates a new prompt cache
 func NewPromptCache(maxSize int, logger interfaces.Logger) interfaces.PromptCache {
+	return NewPromptCacheWithTTL(maxSize, 0, logger) // 0 TTL means no expiration
+}
+
+// NewPromptCacheWithTTL creates a new prompt cache with TTL
+func NewPromptCacheWithTTL(maxSize int, ttl time.Duration, logger interfaces.Logger) interfaces.PromptCache {
 	return &PromptCacheImpl{
 		maxSize: maxSize,
+		ttl:     ttl,
 		items:   make(map[string]*cacheItem),
 		order:   list.New(),
 		logger:  logger,
@@ -38,18 +72,30 @@ func NewPromptCache(maxSize int, logger interfaces.Logger) interfaces.PromptCach
 
 // GetTemplate gets a cached template
 func (pc *PromptCacheImpl) GetTemplate(name string) (*interfaces.PromptTemplate, bool) {
-	pc.mutex.RLock()
-	defer pc.mutex.RUnlock()
+	pc.mutex.Lock()
+	defer pc.mutex.Unlock()
 
 	item, exists := pc.items[name]
 	if !exists {
+		pc.misses++
 		pc.logger.Debug("Cache miss", "name", name)
+		return nil, false
+	}
+
+	// Check if item has expired
+	if pc.ttl > 0 && time.Since(item.createdAt) > pc.ttl {
+		// Remove expired item
+		pc.order.Remove(item.element)
+		delete(pc.items, name)
+		pc.misses++
+		pc.logger.Debug("Cache expired", "name", name, "age_seconds", time.Since(item.createdAt).Seconds())
 		return nil, false
 	}
 
 	// Update access time and move to front
 	item.accessAt = time.Now()
 	pc.order.MoveToFront(item.element)
+	pc.hits++
 
 	pc.logger.Debug("Cache hit", "name", name, "age_seconds", time.Since(item.createdAt).Seconds())
 	return item.template, true
@@ -125,12 +171,18 @@ func (pc *PromptCacheImpl) Stats() *interfaces.CacheStats {
 	pc.mutex.RLock()
 	defer pc.mutex.RUnlock()
 
+	totalRequests := pc.hits + pc.misses
+	hitRate := 0.0
+	if totalRequests > 0 {
+		hitRate = float64(pc.hits) / float64(totalRequests)
+	}
+
 	return &interfaces.CacheStats{
-		Hits:    0, // TODO: Implement hit/miss tracking
-		Misses:  0,
+		Hits:    pc.hits,
+		Misses:  pc.misses,
 		Size:    int64(len(pc.items)),
 		MaxSize: int64(pc.maxSize),
-		HitRate: 0.0,
+		HitRate: hitRate,
 	}
 }
 

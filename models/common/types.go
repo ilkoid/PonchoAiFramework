@@ -1,3 +1,37 @@
+// Package common provides shared types, constants, and configurations for AI model
+// providers in PonchoFramework. This file defines the foundational types used
+// across all model implementations with provider-specific configurations and defaults.
+//
+// Key Type Categories:
+// - Provider Types: DeepSeek, Z.AI, OpenAI, Custom
+// - Model Types: Text, Vision, Multimodal, Embedding
+// - Configuration Types: HTTP, Retry, Validation, Model capabilities
+// - Error Types: Standardized error codes and handling
+// - Content Types: Text, Media, Tool, Image URL
+//
+// Provider Support:
+// - DeepSeek: OpenAI-compatible, text generation focus
+// - Z.AI: Custom API, vision and multimodal support
+// - OpenAI: Standard OpenAI API compatibility
+// - Custom: Extensible for new providers
+//
+// Configuration Management:
+// - HTTP client settings with connection pooling
+// - Retry strategies with backoff and jitter
+// - Model capabilities and limitations
+// - Default configurations for all providers
+// - Validation rules and constraints
+//
+// Usage Examples:
+//   config := GetDefaultConfigForProvider(ProviderDeepSeek)
+//   client := NewHTTPClient(&DefaultHTTPConfig, DefaultRetryConfig)
+//   validator := NewValidator(DefaultValidationRules, logger)
+//
+// Type Safety:
+// - Strongly typed constants for all enums
+// - Comprehensive validation rules
+// - Provider-specific configurations
+// - Extensible design for new models
 package common
 
 import (
