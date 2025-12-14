@@ -1,0 +1,124 @@
+# Configuration for poncho-cli
+# Copy to config.yaml and update with your settings
+
+poncho_framework:
+  # Models configuration
+  models:
+    deepseek-chat:
+      provider: deepseek
+      api_key: "${DEEPSEEK_API_KEY}"
+      model_name: "deepseek-chat"
+      base_url: "https://api.deepseek.com/v1"
+      max_tokens: 4000
+      temperature: 0.3
+      timeout: "30s"
+      retry:
+        max_attempts: 3
+        backoff: "exponential"
+        base_delay: "1s"
+        max_delay: "10s"
+      supports:
+        streaming: true
+        tools: true
+        vision: false
+        system: true
+        json_mode: true
+
+    glm-4.6v-flash:
+      provider: zai
+      api_key: "${ZAI_API_KEY}"
+      model_name: "glm-4.6v-flash"
+      base_url: "https://api.zai.ai/v1"
+      max_tokens: 2000
+      temperature: 0.3
+      timeout: "30s"
+      retry:
+        max_attempts: 3
+        backoff: "exponential"
+        base_delay: "1s"
+        max_delay: "10s"
+      supports:
+        streaming: true
+        tools: true
+        vision: true
+        system: true
+        json_mode: true
+      custom_params:
+        max_image_size: "10MB"
+        thinking:
+          type: "disabled"
+
+  # Tools configuration
+  tools:
+    article_importer:
+      enabled: true
+      timeout: "60s"
+      retry:
+        max_attempts: 3
+        backoff: "exponential"
+        base_delay: "2s"
+        max_delay: "30s"
+      cache:
+        ttl: "1h"
+        max_size: 100
+      dependencies: ["s3"]
+      custom_params:
+        bucket: "${S3_BUCKET}"
+        region: "${S3_REGION}"
+        include_images: true
+        max_images: 10
+        resize_images: true
+        image_options:
+          enabled: true
+          max_width: 1024
+          max_height: 1024
+          quality: 85
+          max_size_bytes: 5242880  # 5MB
+          format: "jpeg"
+          preserve_metadata: false
+
+  # S3 configuration
+  s3:
+    url: "${S3_URL}"
+    region: "${S3_REGION}"
+    bucket: "${S3_BUCKET}"
+    use_ssl: true
+
+  # Wildberries configuration
+  wildberries:
+    base_url: "https://content-api.wildberries.ru"
+    timeout: 30
+    # API key should be provided via WB_API_CONTENT_KEY environment variable
+
+# CLI-specific configuration
+cli:
+  log_level: "info"  # debug, info, warn, error
+
+  flow:
+    # Image resize settings
+    image_resize:
+      enabled: true
+      max_width: 1024
+      max_height: 1024
+      quality: 85
+      max_file_size_kb: 500
+      target_format: "jpeg"
+
+    # Concurrency settings
+    concurrency:
+      vision_analysis_workers: 3  # Number of parallel vision analysis workers
+      creative_workers: 2          # Number of parallel creative description workers
+
+    # Caching settings
+    caching:
+      wb_parents_ttl: "24h"        # How long to cache parent categories
+      wb_subjects_ttl: "12h"       # How long to cache subjects
+      wb_characteristics_ttl: "6h" # How long to cache characteristics
+      max_cache_size: 1000         # Max number of subject characteristics to cache
+
+    # Model parameters
+    model_params:
+      vision_model: "glm-4.6v-flash"  # Model for image analysis
+      text_model: "deepseek-chat"     # Model for text generation
+      temperature: 0.3               # Temperature for creative text generation
+      max_tokens: 2000               # Max tokens per request

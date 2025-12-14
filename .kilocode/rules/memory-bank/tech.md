@@ -295,10 +295,16 @@ TLSHandshakeTimeout: 10s
 - `github.com/stretchr/testify` - Testing utilities (planned)
 
 **Monitoring:**
-- `github.com/prometheus/client_golang` - Prometheus metrics (planned for Phase 3)
+- `github.com/prometheus/client_golang` - Prometheus metrics (planned for Phase 6)
 
 **Caching:**
-- `github.com/go-redis/redis/v8` - Redis client (L2 cache) (planned for Phase 3)
+- `github.com/go-redis/redis/v8` - Redis client (L2 cache) (planned for Phase 6)
+
+**CLI & Flow System:**
+- Custom CLI implementations using standard library ✅
+- Flow orchestration with context management ✅
+- Media processing and image handling ✅
+- Wildberries API integration ✅
 
 ### Dependency Philosophy
 

@@ -1,0 +1,51 @@
+# Wildberries Tool Configuration
+# This file shows how to configure the Wildberries marketplace integration tool
+
+# Tool configuration
+tools:
+  wildberries:
+    # API configuration
+    api_key: "${WB_CONTENT_API_KEY}"  # Required: Wildberries Content API key
+    base_url: "https://content-api.wildberries.ru"  # Optional: Use sandbox for testing
+
+    # Rate limiting (optional, defaults shown)
+    rate_limit:
+      max_burst: 5           # Maximum concurrent requests
+      refill_interval: 600ms # Time between token refills
+
+    # Caching configuration (optional)
+    cache:
+      categories_ttl: 24h    # Parent categories cache duration
+      subjects_ttl: 1h       # Subjects cache duration
+      characteristics_ttl: 1h # Characteristics cache duration
+
+# Environment variables needed:
+# WB_CONTENT_API_KEY - Your Wildberries Content API token (valid for 180 days)
+#
+# To get API key:
+# 1. Go to your Wildberries seller account
+# 2. Navigate to Settings → API Access
+# 3. Generate new Content API token
+# 4. Copy the token and set as environment variable
+
+# Example usage in configuration.yaml:
+#
+# tools:
+#   enabled:
+#     - wildberries
+#   config:
+#     wildberries:
+#       api_key: "${WB_CONTENT_API_KEY}"
+#       base_url: "https://content-api.wildberries.ru"
+
+# For development/testing, you can use the sandbox environment:
+# base_url: "https://content-api-sandbox.wildberries.ru"
+
+# Example API calls supported:
+# 1. Ping - Test API connectivity
+# 2. Get parent categories - Get all product categories
+# 3. Get subjects - Get subcategories with filtering
+# 4. Analyze fashion - AI-powered fashion item analysis
+# 5. Find category - Match keywords to categories
+# 6. Get characteristics - Get required fields for products
+# 7. Generate schema - Generate product schema for subjects

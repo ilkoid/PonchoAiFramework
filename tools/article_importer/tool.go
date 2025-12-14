@@ -163,7 +163,7 @@ func (t *ArticleImporterTool) Execute(ctx context.Context, input interface{}) (i
 	}
 
 	// Create S3 download request
-	s3Request := &s3.S3DownloadRequest{
+	s3Request := &s3.DownloadRequest{
 		ArticleID:     request.ArticleID,
 		IncludeImages: request.IncludeImages,
 		ImageOptions:  request.ImageOptions,
@@ -325,8 +325,8 @@ func (t *ArticleImporterTool) parseImageOptions(options map[string]interface{}) 
 }
 
 // extractS3Config extracts S3 configuration from tool config
-func (t *ArticleImporterTool) extractS3Config(config map[string]interface{}) *s3.S3ClientConfig {
-	s3Config := s3.DefaultS3ClientConfig()
+func (t *ArticleImporterTool) extractS3Config(config map[string]interface{}) *s3.ClientConfig {
+	s3Config := s3.DefaultClientConfig()
 
 	// Extract from tool config first
 	if customParams, ok := config["custom_params"].(map[string]interface{}); ok {

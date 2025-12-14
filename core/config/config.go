@@ -87,7 +87,7 @@ type ConfigManagerImpl struct {
 	loader          ConfigLoader
 	validator       ConfigValidator
 	logger          interfaces.Logger
-	modelFactoryMgr  *ModelFactoryManager
+	modelFactoryMgr  interfaces.ModelFactoryManager
 	modelValidator  *ModelConfigValidator
 	modelInitializer *ModelInitializer
 
@@ -121,7 +121,7 @@ func NewConfigManager(opts ConfigOptions) *ConfigManagerImpl {
 	}
 
 	// Initialize model-related components
-	modelFactoryMgr := NewModelFactoryManager(opts.Logger)
+	// Note: modelFactoryMgr is now managed by the service locator
 	modelValidator := NewModelConfigValidator(opts.Logger)
 	modelRegistry := NewModelRegistry(opts.Logger)
 	modelInitializer := NewModelInitializer(modelRegistry, opts.Logger)
@@ -130,7 +130,7 @@ func NewConfigManager(opts ConfigOptions) *ConfigManagerImpl {
 		loader:          opts.Loader,
 		validator:       opts.Validator,
 		logger:          opts.Logger,
-		modelFactoryMgr:  modelFactoryMgr,
+		modelFactoryMgr:  nil, // Will be injected by service locator
 		modelValidator:  modelValidator,
 		modelInitializer: modelInitializer,
 		envPrefix:       opts.EnvPrefix,
@@ -576,8 +576,13 @@ func (cm *ConfigManagerImpl) LoadAndInitializeModels() (map[string]interfaces.Po
 }
 
 // GetModelFactoryManager returns the model factory manager
-func (cm *ConfigManagerImpl) GetModelFactoryManager() *ModelFactoryManager {
+func (cm *ConfigManagerImpl) GetModelFactoryManager() interfaces.ModelFactoryManager {
 	return cm.modelFactoryMgr
+}
+
+// SetModelFactoryManager sets the model factory manager (injected by service locator)
+func (cm *ConfigManagerImpl) SetModelFactoryManager(mgr interfaces.ModelFactoryManager) {
+	cm.modelFactoryMgr = mgr
 }
 
 // GetModelValidator returns the model configuration validator

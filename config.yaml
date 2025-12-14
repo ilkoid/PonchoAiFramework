@@ -83,8 +83,8 @@ models:
         type: "enabled"
         budget_tokens: 1000
 
-  # Z.AI GLM Flash Vision Model - Faster vision processing
-  glm-vision-flash:
+  # Z.AI GLM 4.6v Flash Vision Model - Vision processing
+  glm-4.6v-flash:
     provider: "zai"
     model_name: "glm-4.6v-flash"
     api_key: "${ZAI_API_KEY}"
@@ -357,15 +357,226 @@ wildberries:
     requests_per_second: 10
     burst: 20
 
-# Image Optimization Configuration
-image_optimization:
+# Image Resize Configuration V2.0
+image_resize:
+  # Global settings
   enabled: true
-  max_width: 640
-  max_height: 480
-  quality: 90
-  max_size_bytes: 90000
-  format: "jpeg"
+  max_memory_mb: 100
+  cache_size_mb: 50
+
+  # Default strategy to use
+  default_strategy: "vision_optimized"
+
+  # Auto-apply resize for models
+  auto_resize: true
+  model_strategies:
+    "glm-vision": "vision_optimized"
+    "glm-4.6v-flash": "vision_optimized"
+    "deepseek-chat": "text_optimized"
+    "deepseek-coder": "code_optimized"
+
+  # Batch processing settings
+  batch_size: 10
+  parallel_resize: false
+  max_concurrency: 3
+
+  # Quality presets
+  default_preset: "high_quality"
+  default_format: "jpeg"
+
+  # Size thresholds for automatic processing decisions
+  size_thresholds:
+    small_image_kb: 100      # < 100KB - no resize needed
+    medium_image_kb: 1024    # 100KB-1MB - standard resize
+    large_image_kb: 5120     # 1-5MB - aggressive resize
+    huge_image_kb: 10240     # > 10MB - use temp files
+
+  # Safety limits
+  limits:
+    max_images_per_context: 50
+    max_memory_per_context_mb: 50
+    max_concurrent_resizes: 5
+    resize_timeout_seconds: 30
+    max_batch_size: 20
+
+  # Advanced options
+  smart_crop: false
   preserve_metadata: false
+  progressive_jpeg: false
+
+  # Monitoring and debugging
+  monitoring: true
+  log_operations: false
+  profiling: false
+
+  # Define resize strategies
+  strategies:
+    vision_optimized:
+      name: "vision_optimized"
+      description: "Optimized for vision models (1024x1024, high quality)"
+      max_width: 1024
+      max_height: 1024
+      max_file_size_kb: 500
+      quality: 85
+      target_format: "jpeg"
+      enabled: true
+      priority: 100
+      interpolation: "lanczos"
+      sharpening:
+        enabled: true
+        amount: 0.3
+        radius: 1.0
+        threshold: 0.05
+      noise_reduction:
+        enabled: false
+        strength: 0.1
+        smoothing: true
+
+    text_optimized:
+      name: "text_optimized"
+      description: "Optimized for text analysis (512x512, medium quality)"
+      max_width: 512
+      max_height: 512
+      max_file_size_kb: 200
+      quality: 75
+      target_format: "jpeg"
+      enabled: true
+      priority: 50
+      interpolation: "bicubic"
+      sharpening:
+        enabled: false
+      noise_reduction:
+        enabled: true
+        strength: 0.2
+        smoothing: true
+
+    code_optimized:
+      name: "code_optimized"
+      description: "Optimized for code screenshots (800x600, high quality)"
+      max_width: 800
+      max_height: 600
+      max_file_size_kb: 300
+      quality: 90
+      target_format: "png"
+      enabled: true
+      priority: 75
+      interpolation: "lanczos"
+      sharpening:
+        enabled: true
+        amount: 0.5
+        radius: 1.5
+        threshold: 0.1
+
+    high_quality:
+      name: "high_quality"
+      description: "High quality for detailed analysis (2048x2048, maximum quality)"
+      max_width: 2048
+      max_height: 2048
+      max_file_size_kb: 1024
+      quality: 95
+      target_format: "png"
+      enabled: true
+      priority: 90
+      interpolation: "lanczos"
+      sharpening:
+        enabled: true
+        amount: 0.2
+        radius: 0.8
+        threshold: 0.02
+      noise_reduction:
+        enabled: true
+        strength: 0.1
+        smoothing: false
+
+    thumbnail:
+      name: "thumbnail"
+      description: "Small thumbnails for previews (150x150, low quality)"
+      max_width: 150
+      max_height: 150
+      max_file_size_kb: 50
+      quality: 70
+      target_format: "jpeg"
+      enabled: true
+      priority: 10
+      interpolation: "bilinear"
+
+  # Quality presets for quick selection
+  quality_presets:
+    ultra_high:
+      name: "ultra_high_preset"
+      description: "Maximum quality preservation"
+      max_width: 4096
+      max_height: 4096
+      max_file_size_kb: 2048
+      quality: 98
+      target_format: "png"
+      enabled: true
+
+    high:
+      name: "high_preset"
+      description: "High quality for detailed work"
+      max_width: 2048
+      max_height: 2048
+      max_file_size_kb: 1024
+      quality: 92
+      target_format: "png"
+      enabled: true
+
+    medium:
+      name: "medium_preset"
+      description: "Balanced quality and size"
+      max_width: 1024
+      max_height: 1024
+      max_file_size_kb: 500
+      quality: 85
+      target_format: "jpeg"
+      enabled: true
+
+    low:
+      name: "low_preset"
+      description: "Small size, acceptable quality"
+      max_width: 512
+      max_height: 512
+      max_file_size_kb: 200
+      quality: 75
+      target_format: "jpeg"
+      enabled: true
+
+  # Format conversion rules
+  convert_formats:
+    "png": "jpeg"  # Convert PNG to JPEG by default for size reduction
+    "bmp": "png"   # Convert BMP to PNG for compression
+    "tiff": "png"  # Convert TIFF to PNG for compatibility
+
+  # Flow-specific configurations
+  flows:
+    article_processor:
+      enabled: true
+      strategy_name: "vision_optimized"
+      quality_preset: "medium"
+      max_images: 20
+      memory_limit_mb: 50
+
+    fashion_analyzer:
+      enabled: true
+      strategy_name: "high_quality"
+      quality_preset: "high"
+      max_images: 10
+      memory_limit_mb: 100
+
+    batch_import:
+      enabled: true
+      strategy_name: "text_optimized"
+      quality_preset: "low"
+      max_images: 50
+      memory_limit_mb: 75
+
+    thumbnail_generator:
+      enabled: true
+      strategy_name: "thumbnail"
+      quality_preset: "low"
+      max_images: 100
+      memory_limit_mb: 25
 
 # Server Configuration (if running as HTTP service)
 server:

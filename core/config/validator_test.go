@@ -260,6 +260,9 @@ func TestConfigValidator_AddCustomRule(t *testing.T) {
 					"provider":   "deepseek",
 					"model_name": "deepseek-chat",
 					"api_key":    "test-key-that-is-long-enough-to-pass-validation",
+					"max_tokens": 4000,
+					"temperature": 0.7,
+					"timeout":    "30s",
 				},
 			},
 			"custom": map[string]interface{}{
@@ -310,6 +313,9 @@ func TestConfigValidator_RemoveRule(t *testing.T) {
 					"provider":   "deepseek",
 					"model_name": "deepseek-chat",
 					"api_key":    "test-key-that-is-long-enough-to-pass-validation",
+					"max_tokens": 4000,
+					"temperature": 0.7,
+					"timeout":    "30s",
 				},
 			},
 			"test": map[string]interface{}{
@@ -337,6 +343,9 @@ func TestConfigValidator_Validate_Duration(t *testing.T) {
 					"provider":   "deepseek",
 					"model_name": "deepseek-chat",
 					"api_key":    "test-key-that-is-long-enough-to-pass-validation",
+					"max_tokens": 4000,
+					"temperature": 0.7,
+					"timeout":    "30s",
 				},
 			},
 			"tools": map[string]interface{}{
@@ -403,6 +412,9 @@ func TestConfigValidator_Validate_Boolean(t *testing.T) {
 							"provider":   "deepseek",
 							"model_name": "deepseek-chat",
 							"api_key":    "test-key-that-is-long-enough-to-pass-validation",
+							"max_tokens": 4000,
+							"temperature": 0.7,
+							"timeout":    "30s",
 						},
 					},
 					"test": map[string]interface{}{
@@ -444,6 +456,9 @@ func TestConfigValidator_Validate_Array(t *testing.T) {
 					"provider":   "deepseek",
 					"model_name": "deepseek-chat",
 					"api_key":    "test-key-that-is-long-enough-to-pass-validation",
+					"max_tokens": 4000,
+					"temperature": 0.7,
+					"timeout":    "30s",
 				},
 			},
 			"test": map[string]interface{}{

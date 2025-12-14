@@ -36,8 +36,18 @@ func (m *MockLogger) Error(msg string, fields ...interface{}) {
 	m.Called(msg, fields)
 }
 
-func TestDefaultS3ClientConfig(t *testing.T) {
-	config := DefaultS3ClientConfig()
+func TestDefaultClientConfig(t *testing.T) {
+	config := &ClientConfig{
+		URL:        "https://storage.yandexcloud.net",
+		Region:     "ru-central1",
+		Bucket:     "plm-ai",
+		Endpoint:   "storage.yandexcloud.net",
+		UseSSL:     true,
+		AccessKey:  "",
+		SecretKey:  "",
+		Timeout:    30,
+		MaxRetries: 3,
+	}
 
 	assert.Equal(t, "https://storage.yandexcloud.net", config.URL)
 	assert.Equal(t, "ru-central1", config.Region)
@@ -63,37 +73,37 @@ func TestDefaultImageProcessingOptions(t *testing.T) {
 func TestValidateS3Config(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  *S3ClientConfig
+		config  *ClientConfig
 		wantErr bool
 	}{
 		{
 			name:    "valid config",
-			config:  &S3ClientConfig{Bucket: "test", AccessKey: "key", SecretKey: "secret", Region: "us-east-1"},
+			config:  &ClientConfig{Bucket: "test", AccessKey: "key", SecretKey: "secret", Region: "us-east-1"},
 			wantErr: false,
 		},
 		{
 			name:    "missing bucket",
-			config:  &S3ClientConfig{AccessKey: "key", SecretKey: "secret", Region: "us-east-1"},
+			config:  &ClientConfig{AccessKey: "key", SecretKey: "secret", Region: "us-east-1"},
 			wantErr: true,
 		},
 		{
 			name:    "missing access key",
-			config:  &S3ClientConfig{Bucket: "test", SecretKey: "secret", Region: "us-east-1"},
+			config:  &ClientConfig{Bucket: "test", SecretKey: "secret", Region: "us-east-1"},
 			wantErr: true,
 		},
 		{
 			name:    "missing secret key",
-			config:  &S3ClientConfig{Bucket: "test", AccessKey: "key", Region: "us-east-1"},
+			config:  &ClientConfig{Bucket: "test", AccessKey: "key", Region: "us-east-1"},
 			wantErr: true,
 		},
 		{
 			name:    "missing region",
-			config:  &S3ClientConfig{Bucket: "test", AccessKey: "key", SecretKey: "secret"},
+			config:  &ClientConfig{Bucket: "test", AccessKey: "key", SecretKey: "secret"},
 			wantErr: true,
 		},
 		{
 			name: "invalid timeout gets default",
-			config: &S3ClientConfig{
+			config: &ClientConfig{
 				Bucket: "test", AccessKey: "key", SecretKey: "secret", Region: "us-east-1", Timeout: -1,
 			},
 			wantErr: false,
@@ -116,7 +126,7 @@ func TestNewS3Client(t *testing.T) {
 	mockLogger := &MockLogger{}
 	mockLogger.On("Info", mock.Anything, mock.Anything).Return()
 
-	config := &S3ClientConfig{
+	config := &ClientConfig{
 		Bucket:     "test-bucket",
 		AccessKey:  "test-access-key",
 		SecretKey:  "test-secret-key",
@@ -137,7 +147,7 @@ func TestNewS3Client(t *testing.T) {
 }
 
 func TestBuildObjectURL(t *testing.T) {
-	config := &S3ClientConfig{
+	config := &ClientConfig{
 		Bucket:   "test-bucket",
 		Endpoint: "storage.example.com",
 		UseSSL:   true,
@@ -155,7 +165,7 @@ func TestBuildObjectURL(t *testing.T) {
 }
 
 func TestBuildListURL(t *testing.T) {
-	config := &S3ClientConfig{
+	config := &ClientConfig{
 		Bucket:   "test-bucket",
 		Endpoint: "storage.example.com",
 		UseSSL:   true,
@@ -173,7 +183,7 @@ func TestBuildListURL(t *testing.T) {
 }
 
 func TestProcessImage(t *testing.T) {
-	config := DefaultS3ClientConfig()
+	config := &ClientConfig{}
 	client := &S3Client{config: config}
 
 	// Create a test image
@@ -203,7 +213,7 @@ func TestProcessImage(t *testing.T) {
 }
 
 func TestProcessImageNoResize(t *testing.T) {
-	config := DefaultS3ClientConfig()
+	config := &ClientConfig{}
 	client := &S3Client{config: config}
 
 	// Create a small test image
@@ -232,7 +242,7 @@ func TestProcessImageNoResize(t *testing.T) {
 }
 
 func TestProcessImageDisabled(t *testing.T) {
-	config := DefaultS3ClientConfig()
+	config := &ClientConfig{}
 	client := &S3Client{config: config}
 
 	// Create a test image
@@ -334,7 +344,7 @@ func TestDownloadArticleIntegration(t *testing.T) {
 			hostPart = strings.Split(hostPart, ":")[0]
 		}
 
-		config := &S3ClientConfig{
+		config := &ClientConfig{
 			Bucket:     "test-bucket",
 			AccessKey:  "test-key",
 			SecretKey:  "test-secret",
@@ -353,7 +363,7 @@ func TestDownloadArticleIntegration(t *testing.T) {
 		client, err := NewS3Client(config, mockLogger)
 		require.NoError(t, err)
 
-		req := &S3DownloadRequest{
+		req := &DownloadRequest{
 			ArticleID:     "12345",
 			IncludeImages: true,
 			ImageOptions:  DefaultImageProcessingOptions(),
@@ -399,7 +409,7 @@ func TestDownloadArticleError(t *testing.T) {
 			hostPart = strings.Split(hostPart, ":")[0]
 		}
 
-		config := &S3ClientConfig{
+		config := &ClientConfig{
 			Bucket:     "", // Empty bucket to avoid URL construction issues
 			AccessKey:  "test-key",
 			SecretKey:  "test-secret",
@@ -417,7 +427,7 @@ func TestDownloadArticleError(t *testing.T) {
 		client, err := NewS3Client(config, mockLogger)
 		require.NoError(t, err)
 
-		req := &S3DownloadRequest{
+		req := &DownloadRequest{
 			ArticleID:     "12345",
 			IncludeImages: false,
 			Timeout:       10,
@@ -443,7 +453,7 @@ func TestDownloadArticleError(t *testing.T) {
 }
 
 func TestListArticles(t *testing.T) {
-	config := &S3ClientConfig{
+	config := &ClientConfig{
 		Bucket:     "", // Empty bucket to avoid URL construction issues
 		AccessKey:  "test-access-key",
 		SecretKey:  "test-secret-key",
@@ -460,7 +470,7 @@ func TestListArticles(t *testing.T) {
 	client, err := NewS3Client(config, mockLogger)
 	require.NoError(t, err)
 
-	req := &S3ListRequest{
+	req := &ListRequest{
 		Bucket:   "test-bucket",
 		Region:   "us-east-1",
 		Prefix:   "articles/",
@@ -490,7 +500,7 @@ func (e *testError) Error() string {
 
 // Benchmark tests
 func BenchmarkProcessImage(b *testing.B) {
-	config := DefaultS3ClientConfig()
+	config := &ClientConfig{}
 	client := &S3Client{config: config}
 
 	// Create test image

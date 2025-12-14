@@ -29,10 +29,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ilkoid/PonchoAiFramework/interfaces"
+	"gopkg.in/yaml.v3"
 )
 
 // V1PromptData represents the minimal data structure for version 1 prompt format
@@ -204,7 +206,7 @@ func (p *V1Parser) ToPromptTemplate(data *V1PromptData, name string) *interfaces
 		Metadata:    &interfaces.PromptMetadata{},
 	}
 
-	// Add config part if exists
+	// Parse config if exists
 	if data.Config != "" {
 		// Parse config as YAML for model settings
 		configPart := &interfaces.PromptPart{
@@ -212,6 +214,9 @@ func (p *V1Parser) ToPromptTemplate(data *V1PromptData, name string) *interfaces
 			Content: data.Config,
 		}
 		template.Parts = append(template.Parts, configPart)
+
+		// Parse config values
+		p.parseConfigValues(data.Config, template)
 	}
 
 	// Add system part if exists
@@ -256,6 +261,105 @@ func (p *V1Parser) ToPromptTemplate(data *V1PromptData, name string) *interfaces
 	}
 
 	return template
+}
+
+// parseConfigValues extracts configuration values from config string
+func (p *V1Parser) parseConfigValues(configStr string, template *interfaces.PromptTemplate) {
+	// Try to parse as YAML first
+	var yamlConfig map[string]interface{}
+	if err := yaml.Unmarshal([]byte(configStr), &yamlConfig); err == nil {
+		// Extract model name
+		if model, ok := yamlConfig["model"].(string); ok {
+			template.Model = model
+		}
+
+		// Extract config section if exists
+		if configSection, ok := yamlConfig["config"].(map[string]interface{}); ok {
+			// Extract max_tokens or maxOutputTokens
+			if maxTokens, ok := configSection["max_tokens"]; ok {
+				if mt, ok := maxTokens.(int); ok {
+					template.MaxTokens = &mt
+				} else if mt, ok := maxTokens.(float64); ok {
+					mti := int(mt)
+					template.MaxTokens = &mti
+				}
+			} else if maxTokens, ok := configSection["maxOutputTokens"]; ok {
+				if mt, ok := maxTokens.(int); ok {
+					template.MaxTokens = &mt
+				} else if mt, ok := maxTokens.(float64); ok {
+					mti := int(mt)
+					template.MaxTokens = &mti
+				}
+			}
+
+			// Extract temperature
+			if temp, ok := configSection["temperature"]; ok {
+				if t, ok := temp.(float64); ok {
+					tempFloat := float32(t)
+					template.Temperature = &tempFloat
+				}
+			}
+		}
+		return
+	}
+
+	// Fallback to simple line-by-line parsing
+	lines := strings.Split(configStr, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "model:") {
+			template.Model = strings.TrimSpace(strings.TrimPrefix(line, "model:"))
+		} else if strings.HasPrefix(line, "max_tokens:") {
+			if val := p.extractIntValue(line); val != nil {
+				template.MaxTokens = val
+			}
+		} else if strings.HasPrefix(line, "maxOutputTokens:") {
+			if val := p.extractIntValue(line); val != nil {
+				template.MaxTokens = val
+			}
+		} else if strings.HasPrefix(line, "temperature:") {
+			if val := p.extractFloatValue(line); val != nil {
+				template.Temperature = val
+			}
+		}
+	}
+}
+
+// extractIntValue extracts integer value from config line
+func (p *V1Parser) extractIntValue(line string) *int {
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) < 2 {
+		return nil
+	}
+
+	valueStr := strings.TrimSpace(parts[1])
+	if value, err := strconv.Atoi(valueStr); err == nil {
+		return &value
+	}
+
+	// Try to parse as float then convert
+	if floatVal, err := strconv.ParseFloat(valueStr, 64); err == nil {
+		intVal := int(floatVal)
+		return &intVal
+	}
+
+	return nil
+}
+
+// extractFloatValue extracts float32 value from config line
+func (p *V1Parser) extractFloatValue(line string) *float32 {
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) < 2 {
+		return nil
+	}
+
+	valueStr := strings.TrimSpace(parts[1])
+	if value, err := strconv.ParseFloat(valueStr, 32); err == nil {
+		floatVal := float32(value)
+		return &floatVal
+	}
+
+	return nil
 }
 
 // ValidateFormat checks if content matches version 1 format

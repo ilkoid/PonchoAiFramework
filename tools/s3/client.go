@@ -15,24 +15,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ilkoid/PonchoAiFramework/interfaces"
 )
 
 // S3Client provides S3-compatible storage client with image processing
 type S3Client struct {
-	config     *S3ClientConfig
+	config     *ClientConfig
 	httpClient *http.Client
-	logger     interfaces.Logger
+	logger     Logger
 }
 
 // NewS3Client creates a new S3 client instance
-func NewS3Client(config *S3ClientConfig, logger interfaces.Logger) (*S3Client, error) {
+func NewS3Client(config *ClientConfig, logger Logger) (*S3Client, error) {
 	if config == nil {
-		config = DefaultS3ClientConfig()
+		config = DefaultClientConfig()
 	}
 
 	if logger == nil {
-		logger = interfaces.NewDefaultLogger()
+		logger = NewDefaultLogger()
 	}
 
 	// Validate configuration
@@ -68,7 +67,7 @@ func NewS3Client(config *S3ClientConfig, logger interfaces.Logger) (*S3Client, e
 }
 
 // validateS3Config validates S3 configuration
-func validateS3Config(config *S3ClientConfig) error {
+func validateS3Config(config *ClientConfig) error {
 	// Bucket is not required if custom URL is provided
 	if config.Bucket == "" && config.URL == "" {
 		return fmt.Errorf("bucket name is required when no custom URL is provided")
@@ -92,7 +91,7 @@ func validateS3Config(config *S3ClientConfig) error {
 }
 
 // DownloadArticle downloads complete article data including JSON and images
-func (c *S3Client) DownloadArticle(ctx context.Context, req *S3DownloadRequest) (*S3DownloadResponse, error) {
+func (c *S3Client) DownloadArticle(ctx context.Context, req *DownloadRequest) (*DownloadResponse, error) {
 	startTime := time.Now()
 
 	// Set defaults
@@ -120,7 +119,7 @@ func (c *S3Client) DownloadArticle(ctx context.Context, req *S3DownloadRequest) 
 	)
 
 	// Initialize response
-	response := &S3DownloadResponse{
+	response := &DownloadResponse{
 		Success: false,
 		Metadata: &ResponseMetadata{
 			RequestID: requestID,
@@ -133,7 +132,7 @@ func (c *S3Client) DownloadArticle(ctx context.Context, req *S3DownloadRequest) 
 	// Download JSON data
 	jsonData, err := c.downloadJSON(timeoutCtx, req.ArticleID)
 	if err != nil {
-		response.Error = &S3Error{
+		response.Error = &Error{
 			Code:      "DOWNLOAD_JSON_FAILED",
 			Message:   fmt.Sprintf("Failed to download JSON for article %s", req.ArticleID),
 			Details:   err.Error(),
@@ -143,11 +142,11 @@ func (c *S3Client) DownloadArticle(ctx context.Context, req *S3DownloadRequest) 
 		return response, err
 	}
 
-	article := &S3ArticleData{
+	article := &ArticleData{
 		ArticleID: req.ArticleID,
 		JSONData:  jsonData,
-		Images:    []*S3Image{},
-		Metadata: &S3ArticleMetadata{
+		Images:    []*Image{},
+		Metadata: &ArticleMetadata{
 			DownloadTime: startTime,
 			Bucket:       c.config.Bucket,
 			Region:       c.config.Region,
@@ -158,7 +157,7 @@ func (c *S3Client) DownloadArticle(ctx context.Context, req *S3DownloadRequest) 
 	if req.IncludeImages {
 		images, err := c.downloadImages(timeoutCtx, req.ArticleID, req.ImageOptions, req.MaxImages)
 		if err != nil {
-			response.Error = &S3Error{
+			response.Error = &Error{
 				Code:      "DOWNLOAD_IMAGES_FAILED",
 				Message:   fmt.Sprintf("Failed to download images for article %s", req.ArticleID),
 				Details:   err.Error(),
@@ -229,7 +228,7 @@ func (c *S3Client) downloadJSON(ctx context.Context, articleID string) (string, 
 }
 
 // downloadImages downloads and processes images for an article
-func (c *S3Client) downloadImages(ctx context.Context, articleID string, options *ImageProcessingOptions, maxImages int) ([]*S3Image, error) {
+func (c *S3Client) downloadImages(ctx context.Context, articleID string, options *ImageProcessingOptions, maxImages int) ([]*Image, error) {
 	// List images in the article folder
 	imagesFolder := fmt.Sprintf("%s/images/", articleID)
 	url := c.buildListURL(imagesFolder)
@@ -272,7 +271,7 @@ func (c *S3Client) downloadImages(ctx context.Context, articleID string, options
 	}
 
 	// Download and process each image
-	var images []*S3Image
+	var images []*Image
 	for i, imageName := range imageNames {
 		if i >= maxImages {
 			break
@@ -295,7 +294,7 @@ func (c *S3Client) downloadImages(ctx context.Context, articleID string, options
 }
 
 // downloadAndProcessImage downloads a single image and applies processing
-func (c *S3Client) downloadAndProcessImage(ctx context.Context, articleID, imageName string, options *ImageProcessingOptions) (*S3Image, error) {
+func (c *S3Client) downloadAndProcessImage(ctx context.Context, articleID, imageName string, options *ImageProcessingOptions) (*Image, error) {
 	imageKey := fmt.Sprintf("%s/images/%s", articleID, imageName)
 	url := c.buildObjectURL(imageKey)
 
@@ -345,7 +344,7 @@ func (c *S3Client) downloadAndProcessImage(ctx context.Context, articleID, image
 	contentType := getContentType(imageName)
 	base64Data := base64.StdEncoding.EncodeToString(processedData)
 
-	return &S3Image{
+	return &Image{
 		Filename:    imageName,
 		Data:        base64Data,
 		ContentType: contentType,
@@ -447,7 +446,7 @@ func (c *S3Client) processImage(data []byte, options *ImageProcessingOptions) ([
 }
 
 // ListArticles lists available articles in the S3 bucket
-func (c *S3Client) ListArticles(ctx context.Context, req *S3ListRequest) (*S3ListResponse, error) {
+func (c *S3Client) ListArticles(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	startTime := time.Now()
 	requestID := generateRequestID()
 
@@ -459,7 +458,7 @@ func (c *S3Client) ListArticles(ctx context.Context, req *S3ListRequest) (*S3Lis
 		req.Region = c.config.Region
 	}
 
-	response := &S3ListResponse{
+	response := &ListResponse{
 		Success: false,
 		Metadata: &ResponseMetadata{
 			RequestID: requestID,
@@ -479,7 +478,7 @@ func (c *S3Client) ListArticles(ctx context.Context, req *S3ListRequest) (*S3Lis
 
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		response.Error = &S3Error{
+		response.Error = &Error{
 			Code:      "CREATE_REQUEST_FAILED",
 			Message:   "Failed to create list request",
 			Details:   err.Error(),
@@ -493,7 +492,7 @@ func (c *S3Client) ListArticles(ctx context.Context, req *S3ListRequest) (*S3Lis
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		response.Error = &S3Error{
+		response.Error = &Error{
 			Code:      "LIST_REQUEST_FAILED",
 			Message:   "Failed to execute list request",
 			Details:   err.Error(),
@@ -506,7 +505,7 @@ func (c *S3Client) ListArticles(ctx context.Context, req *S3ListRequest) (*S3Lis
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		response.Error = &S3Error{
+		response.Error = &Error{
 			Code:      "LIST_HTTP_ERROR",
 			Message:   fmt.Sprintf("List request failed with HTTP %d", resp.StatusCode),
 			Details:   string(body),
@@ -532,6 +531,10 @@ func (c *S3Client) ListArticles(ctx context.Context, req *S3ListRequest) (*S3Lis
 func (c *S3Client) buildObjectURL(key string) string {
 	// If custom URL is provided, use it directly
 	if c.config.URL != "" {
+		// For Yandex Cloud, use format: https://endpoint/bucket/key
+		if strings.Contains(c.config.URL, "yandexcloud.net") {
+			return fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(c.config.URL, "/"), c.config.Bucket, key)
+		}
 		return fmt.Sprintf("%s/%s", strings.TrimSuffix(c.config.URL, "/"), key)
 	}
 
@@ -540,25 +543,41 @@ func (c *S3Client) buildObjectURL(key string) string {
 		scheme = "http"
 	}
 
+	// For Yandex Cloud, use virtual-hosted style or path style
+	if strings.Contains(c.config.Endpoint, "yandexcloud.net") {
+		// Use path style for Yandex Cloud: https://endpoint/bucket/key
+		return fmt.Sprintf("%s://%s/%s/%s", scheme, c.config.Endpoint, c.config.Bucket, key)
+	}
+
+	// Default virtual-hosted style: https://bucket.endpoint/key
 	return fmt.Sprintf("%s://%s.%s/%s", scheme, c.config.Bucket, c.config.Endpoint, key)
 }
 
 func (c *S3Client) buildListURL(prefix string) string {
+	var baseURL string
+
 	// If custom URL is provided, use it directly
 	if c.config.URL != "" {
-		baseURL := strings.TrimSuffix(c.config.URL, "/")
-		if prefix != "" {
-			return fmt.Sprintf("%s?list-type=2&prefix=%s", baseURL, url.QueryEscape(prefix))
+		// For Yandex Cloud, use format: https://endpoint/bucket
+		if strings.Contains(c.config.URL, "yandexcloud.net") {
+			baseURL = fmt.Sprintf("%s/%s", strings.TrimSuffix(c.config.URL, "/"), c.config.Bucket)
+		} else {
+			baseURL = strings.TrimSuffix(c.config.URL, "/")
 		}
-		return fmt.Sprintf("%s?list-type=2", baseURL)
-	}
+	} else {
+		scheme := "https"
+		if !c.config.UseSSL {
+			scheme = "http"
+		}
 
-	scheme := "https"
-	if !c.config.UseSSL {
-		scheme = "http"
+		// For Yandex Cloud, use path style: https://endpoint/bucket
+		if strings.Contains(c.config.Endpoint, "yandexcloud.net") {
+			baseURL = fmt.Sprintf("%s://%s/%s", scheme, c.config.Endpoint, c.config.Bucket)
+		} else {
+			// Default virtual-hosted style
+			baseURL = fmt.Sprintf("%s://%s.%s", scheme, c.config.Bucket, c.config.Endpoint)
+		}
 	}
-
-	baseURL := fmt.Sprintf("%s://%s.%s", scheme, c.config.Bucket, c.config.Endpoint)
 
 	if prefix != "" {
 		return fmt.Sprintf("%s?list-type=2&prefix=%s", baseURL, url.QueryEscape(prefix))
@@ -567,9 +586,13 @@ func (c *S3Client) buildListURL(prefix string) string {
 }
 
 func (c *S3Client) setAuthHeaders(req *http.Request) {
-	// Simple auth header - in real implementation you'd use AWS Signature V4
-	req.Header.Set("Authorization", fmt.Sprintf("AWS4-HMAC-SHA256 Credential=%s", c.config.AccessKey))
-	req.Header.Set("Content-Type", "application/json")
+	// Use AWS Signature Version 4 for Yandex Cloud compatibility
+	if err := c.setAuthHeadersV4(req); err != nil {
+		// Fallback to simple auth for development/testing
+		c.logger.Warn("Failed to set AWS V4 signature, using fallback", "error", err.Error())
+		req.Header.Set("Authorization", fmt.Sprintf("AWS4-HMAC-SHA256 Credential=%s", c.config.AccessKey))
+		req.Header.Set("Content-Type", "application/json")
+	}
 }
 
 func generateRequestID() string {

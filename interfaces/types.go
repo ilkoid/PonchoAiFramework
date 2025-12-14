@@ -121,17 +121,29 @@ type PonchoStreamChunk struct {
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
 
+// ImageOptimizationConfig represents image optimization configuration
+type ImageOptimizationConfig struct {
+	Enabled      bool   `json:"enabled"`
+	MaxWidth     int    `json:"max_width"`
+	MaxHeight    int    `json:"max_height"`
+	MaxSizeBytes int64  `json:"max_size_bytes"`
+	Quality      int    `json:"quality"`
+	Format       string `json:"format"`
+}
+
 // PonchoFrameworkConfig represents the main framework configuration
 type PonchoFrameworkConfig struct {
-	Models      map[string]*ModelConfig `json:"models"`
-	Tools       map[string]*ToolConfig  `json:"tools"`
-	Flows       map[string]*FlowConfig  `json:"flows"`
-	Logging     *LoggingConfig          `json:"logging"`
-	Metrics     *MetricsConfig          `json:"metrics"`
-	Cache       *CacheConfig            `json:"cache"`
-	Security    *SecurityConfig         `json:"security"`
-	S3          *S3Config               `json:"s3"`
-	Wildberries *WildberriesConfig      `json:"wildberries"`
+	Models           map[string]*ModelConfig `json:"models"`
+	Tools            map[string]*ToolConfig  `json:"tools"`
+	Flows            map[string]*FlowConfig  `json:"flows"`
+	Logging          *LoggingConfig          `json:"logging"`
+	Metrics          *MetricsConfig          `json:"metrics"`
+	Cache            *CacheConfig            `json:"cache"`
+	Security         *SecurityConfig         `json:"security"`
+	S3               *S3Config               `json:"s3"`
+	Wildberries      *WildberriesConfig      `json:"wildberries"`
+	ImageOptimization *ImageOptimizationConfig `json:"image_optimization,omitempty"`
+	CustomParams     map[string]interface{}  `json:"custom_params,omitempty"`
 }
 
 // ModelConfig represents configuration for a specific model
@@ -362,3 +374,5 @@ type SystemMetrics struct {
 	HeapSize       int64   `json:"heap_size_bytes"`
 	HeapAlloc      int64   `json:"heap_alloc_bytes"`
 }
+
+

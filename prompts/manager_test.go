@@ -655,11 +655,12 @@ func TestVariableProcessor(t *testing.T) {
 	content := "Hello {{name}}, you are {{age}} years old."
 	variables := map[string]interface{}{
 		"name": "John",
+		"age":  25, // Add the age variable to test substitution
 	}
-	
+
 	processed, err := processor.ProcessVariables(content, variables)
 	assert.NoError(t, err)
-	assert.Equal(t, "Hello John, you are {{age}} years old.", processed)
+	assert.Equal(t, "Hello John, you are 25 years old.", processed)
 
 	// Test ExtractVariables
 	extracted, err := processor.ExtractVariables(content)

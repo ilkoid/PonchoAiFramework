@@ -83,7 +83,7 @@ func main() {
 	flag.StringVar(&config.OutputDir, "output", "./test-results", "Directory to save test results")
 	flag.StringVar(&config.TestDataDir, "testdata", "examples/test_data/result", "Directory containing test data")
 	var modelsStr string
-	flag.StringVar(&modelsStr, "models", "deepseek-chat,glm-vision-flash", "Comma-separated list of models to test")
+	flag.StringVar(&modelsStr, "models", "deepseek-chat,glm-4.6v-flash", "Comma-separated list of models to test")
 	flag.BoolVar(&config.SkipAPIKeys, "skip-api-keys", false, "Skip tests requiring API keys")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Enable verbose logging")
 	flag.DurationVar(&config.Timeout, "timeout", 60*time.Second, "Test timeout duration")
@@ -161,7 +161,9 @@ func NewIntegrationTester(config *TestConfig) (*IntegrationTester, error) {
 			RetryAttempts      int     `yaml:"retry_attempts" json:"retry_attempts"`
 			RetryDelay         string  `yaml:"retry_delay" json:"retry_delay"`
 		}{
-			DefaultModel: "deepseek-chat",
+			DefaultModel:       "deepseek-chat",
+			DefaultMaxTokens:   1000,
+			DefaultTemperature: 0.7,
 		},
 		Cache: struct {
 			Enabled bool   `yaml:"enabled" json:"enabled"`
@@ -337,7 +339,7 @@ func (it *IntegrationTester) testModelRegistration(ctx context.Context) error {
 
 	// Register Z.AI models
 	zaiModel := zai.NewZAIModel()
-	if err := it.framework.RegisterModel("glm-vision-flash", zaiModel); err != nil {
+	if err := it.framework.RegisterModel("glm-4.6v-flash", zaiModel); err != nil {
 		result.Success = false
 		result.Error = fmt.Sprintf("Failed to register Z.AI model: %v", err)
 		return err
@@ -567,7 +569,7 @@ func (it *IntegrationTester) testVisionAnalysis(ctx context.Context) error {
 	result := TestResult{
 		Name:  "Vision Analysis (Z.AI GLM)",
 		Type:  "vision",
-		Model: "glm-vision-flash",
+		Model: "glm-4.6v-flash",
 	}
 
 	defer func() {
@@ -604,7 +606,7 @@ func (it *IntegrationTester) testVisionAnalysis(ctx context.Context) error {
 	}
 
 	// Execute vision prompt
-	response, err := it.promptManager.ExecutePrompt(ctx, "sketch_description", variables, "glm-vision-flash")
+	response, err := it.promptManager.ExecutePrompt(ctx, "sketch_description", variables, "glm-4.6v-flash")
 	if err != nil {
 		result.Success = false
 		result.Error = fmt.Sprintf("Vision analysis failed: %v", err)
@@ -675,7 +677,7 @@ func (it *IntegrationTester) testPromptExecution(ctx context.Context) error {
 		template, _ := it.promptManager.LoadTemplate("sketch_description")
 		modelName := extractModelFromTemplate(template)
 		if modelName == "" {
-			modelName = "glm-vision-flash" // fallback
+			modelName = "glm-4.6v-flash" // fallback
 		}
 		_, execErr = it.promptManager.ExecutePrompt(ctx, "sketch_description", variables, modelName)
 	} else if hasDeepSeekKey {
@@ -860,7 +862,7 @@ func loadFrameworkConfig(path string, logger interfaces.Logger) (*interfaces.Pon
 				},
 				CustomParams: map[string]interface{}{},
 			},
-			"glm-vision-flash": {
+			"glm-4.6v-flash": {
 				Provider:    "zai",
 				ModelName:   "glm-4.6v-flash",
 				APIKey:      "${ZAI_API_KEY}",

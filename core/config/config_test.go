@@ -10,28 +10,28 @@ func TestConfigManager_Load_FromFile(t *testing.T) {
 	// Создаем временный конфигурационный файл
 	configContent := `
 models:
-	 deepseek:
-	   provider: "deepseek"
-	   model_name: "deepseek-chat"
-	   api_key: "test-key-that-is-long-enough-to-pass-validation"
-	   max_tokens: 4000
-	   temperature: 0.7
-	   timeout: "30s"
-	   supports:
-	     streaming: true
-	     tools: true
-	     vision: false
-	     system: true
-	     json_mode: true
+  deepseek:
+    provider: "deepseek"
+    model_name: "deepseek-chat"
+    api_key: "test-key-that-is-long-enough-to-pass-validation"
+    max_tokens: 4000
+    temperature: 0.7
+    timeout: "30s"
+    supports:
+      streaming: true
+      tools: true
+      vision: false
+      system: true
+      json_mode: true
 
 tools:
-	 test_tool:
-	   enabled: true
-	   timeout: "30s"
+  test_tool:
+    enabled: true
+    timeout: "30s"
 
 logger:
-	 level: "info"
-	 format: "text"
+  level: "info"
+  format: "text"
 `
 
 	tmpFile, err := os.CreateTemp("", "test_config_*.yaml")
@@ -82,7 +82,7 @@ logger:
 
 func TestConfigManager_Load_WithEnvironmentVariables(t *testing.T) {
 	// Устанавливаем переменные окружения
-	os.Setenv("PONCHO_MODELS__DEEPSEEK__API_KEY", "env-key")
+	os.Setenv("PONCHO_MODELS__DEEPSEEK__API_KEY", "environment-key-that-is-long-enough")
 	os.Setenv("PONCHO_MODELS__DEEPSEEK__MAX_TOKENS", "5000")
 	os.Setenv("PONCHO_TOOLS__TEST_TOOL__ENABLED", "false")
 	os.Setenv("PONCHO_TOOLS__TEST_TOOL__TIMEOUT", "60s")
@@ -137,8 +137,8 @@ func TestConfigManager_Load_WithEnvironmentVariables(t *testing.T) {
 	t.Logf("tools.test_tool.timeout = %v (type: %T)", manager.Get("tools.test_tool.timeout"), manager.Get("tools.test_tool.timeout"))
 
 	// Проверяем, что environment variables перекрывают файловые значения
-	if manager.GetString("models.deepseek.api_key") != "env-key" {
-		t.Errorf("Expected api_key from env 'env-key', got '%s'", manager.GetString("models.deepseek.api_key"))
+	if manager.GetString("models.deepseek.api_key") != "environment-key-that-is-long-enough" {
+		t.Errorf("Expected api_key from env 'environment-key-that-is-long-enough', got '%s'", manager.GetString("models.deepseek.api_key"))
 	}
 
 	if manager.GetInt("models.deepseek.max_tokens") != 5000 {

@@ -36,7 +36,7 @@ func (m *MockLogger) Error(msg string, fields ...interface{}) {
 
 // S3ClientInterface defines the interface for S3 client to allow mocking
 type S3ClientInterface interface {
-	DownloadArticle(ctx context.Context, req *s3.S3DownloadRequest) (*s3.S3DownloadResponse, error)
+	DownloadArticle(ctx context.Context, req *s3.DownloadRequest) (*s3.DownloadResponse, error)
 }
 
 // MockS3Client for testing
@@ -44,15 +44,25 @@ type MockS3Client struct {
 	mock.Mock
 }
 
-func (m *MockS3Client) DownloadArticle(ctx context.Context, req *s3.S3DownloadRequest) (*s3.S3DownloadResponse, error) {
+func (m *MockS3Client) DownloadArticle(ctx context.Context, req *s3.DownloadRequest) (*s3.DownloadResponse, error) {
 	args := m.Called(ctx, req)
-	return args.Get(0).(*s3.S3DownloadResponse), args.Error(1)
+	return args.Get(0).(*s3.DownloadResponse), args.Error(1)
 }
 
 // extractS3ConfigForTest is a helper function to access private extractS3Config method
-func extractS3ConfigForTest(tool *ArticleImporterTool, config map[string]interface{}) *s3.S3ClientConfig {
+func extractS3ConfigForTest(tool *ArticleImporterTool, config map[string]interface{}) *s3.ClientConfig {
 	// Since extractS3Config is private, we'll create config manually
-	s3Config := s3.DefaultS3ClientConfig()
+	s3Config := &s3.ClientConfig{
+		URL:        "https://storage.yandexcloud.net",
+		Region:     "ru-central1",
+		Bucket:     "plm-ai",
+		Endpoint:   "storage.yandexcloud.net",
+		UseSSL:     true,
+		AccessKey:  "",
+		SecretKey:  "",
+		Timeout:    30,
+		MaxRetries: 3,
+	}
 
 	// Extract from global S3 config first (this matches the real implementation order)
 	if s3ConfigMap, ok := config["s3"].(map[string]interface{}); ok {
@@ -459,7 +469,7 @@ func TestExtractS3Config(t *testing.T) {
 	tests := []struct {
 		name     string
 		config   map[string]interface{}
-		expected *s3.S3ClientConfig
+		expected *s3.ClientConfig
 	}{
 		{
 			name: "custom params config",
@@ -469,7 +479,7 @@ func TestExtractS3Config(t *testing.T) {
 					"region": "custom-region",
 				},
 			},
-			expected: &s3.S3ClientConfig{
+			expected: &s3.ClientConfig{
 				Bucket: "custom-bucket",
 				Region: "custom-region",
 			},
@@ -489,7 +499,7 @@ func TestExtractS3Config(t *testing.T) {
 					"max_retries": 5,
 				},
 			},
-			expected: &s3.S3ClientConfig{
+			expected: &s3.ClientConfig{
 				URL:        "https://custom.storage.com",
 				Region:     "custom-region",
 				Bucket:     "custom-bucket",
@@ -504,7 +514,7 @@ func TestExtractS3Config(t *testing.T) {
 		{
 			name:     "no config",
 			config:   map[string]interface{}{},
-			expected: &s3.S3ClientConfig{}, // Should get defaults
+			expected: &s3.ClientConfig{}, // Should get defaults
 		},
 	}
 
@@ -564,7 +574,7 @@ func TestArticleImporterTool_Integration(t *testing.T) {
 	tool.SetLogger(mockLogger)
 
 	// Create real S3 client with test server
-	s3Config := &s3.S3ClientConfig{
+	s3Config := &s3.ClientConfig{
 		Bucket:     "test-bucket",
 		AccessKey:  "test-key",
 		SecretKey:  "test-secret",

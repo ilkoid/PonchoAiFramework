@@ -41,6 +41,7 @@ type PonchoFrameworkImpl struct {
 	config           *interfaces.PonchoFrameworkConfig
 	configManager    config.ConfigManager
 	logger           interfaces.Logger
+	serviceLocator   ServiceLocator
 
 	// Runtime state
 	started   bool
@@ -63,6 +64,9 @@ func NewPonchoFramework(cfg *interfaces.PonchoFrameworkConfig, logger interfaces
 		Logger:    logger,
 	})
 
+	// Create service locator
+	serviceLocator := NewServiceLocator(logger)
+
 	return &PonchoFrameworkImpl{
 		modelRegistry: registry.NewPonchoModelRegistry(logger),
 		toolRegistry:  registry.NewPonchoToolRegistry(logger),
@@ -70,6 +74,7 @@ func NewPonchoFramework(cfg *interfaces.PonchoFrameworkConfig, logger interfaces
 		config:        cfg,
 		configManager:  configManager,
 		logger:        logger,
+		serviceLocator: serviceLocator,
 		metrics: &interfaces.PonchoMetrics{
 			GeneratedRequests: &interfaces.GenerationMetrics{
 				ByModel: make(map[string]*interfaces.ModelMetrics),
@@ -107,12 +112,32 @@ func (pf *PonchoFrameworkImpl) Start(ctx context.Context) error {
 		pf.config = &interfaces.PonchoFrameworkConfig{}
 	}
 
+	// Initialize service locator
+	if pf.serviceLocator != nil {
+		pf.logger.Info("Initializing service locator")
+		if err := pf.serviceLocator.Initialize(); err != nil {
+			pf.logger.Error("Failed to initialize service locator", "error", err)
+			return fmt.Errorf("failed to initialize service locator: %w", err)
+		}
+	}
+
 	// Load configuration
 	if pf.configManager != nil {
+		// Inject model factory manager into config manager
+		if cm, ok := pf.configManager.(*config.ConfigManagerImpl); ok {
+			cm.SetModelFactoryManager(pf.serviceLocator.GetModelFactoryManager())
+		}
+
 		pf.logger.Info("Loading configuration")
 		if err := pf.configManager.Load(); err != nil {
 			pf.logger.Error("Failed to load configuration", "error", err)
 			return fmt.Errorf("failed to load configuration: %w", err)
+		}
+
+		// Register factories from configuration
+		if err := pf.registerFactoriesFromConfig(); err != nil {
+			pf.logger.Error("Failed to register factories from configuration", "error", err)
+			return fmt.Errorf("failed to register factories: %w", err)
 		}
 
 		// Load and register models from configuration
@@ -142,6 +167,15 @@ func (pf *PonchoFrameworkImpl) Stop(ctx context.Context) error {
 	}
 
 	pf.logger.Info("Stopping PonchoFramework")
+
+	// Shutdown service locator
+	if pf.serviceLocator != nil {
+		pf.logger.Info("Shutting down service locator")
+		if err := pf.serviceLocator.Shutdown(); err != nil {
+			pf.logger.Error("Failed to shutdown service locator", "error", err)
+			// Continue with shutdown even if service locator fails
+		}
+	}
 
 	// TODO: Shutdown components gracefully
 	// This will be implemented in future phases
@@ -573,6 +607,31 @@ func (pf *PonchoFrameworkImpl) recordError(component, errorType string) {
 	}
 }
 
+// registerFactoriesFromConfig registers factories based on configuration
+func (pf *PonchoFrameworkImpl) registerFactoriesFromConfig() error {
+	if pf.serviceLocator == nil {
+		pf.logger.Info("No service locator available, skipping factory registration")
+		return nil
+	}
+
+	pf.logger.Info("Registering factories")
+
+	// Import and register model factories
+	// Note: These imports maintain clean architecture as the core only knows about interfaces
+	// The actual factory implementations are registered by the framework initialization
+
+	// Register model factories
+	// DeepSeek factory
+	// Note: In a production environment, these would be loaded dynamically based on config
+	// For now, we'll use reflection or a registration mechanism
+
+	// TODO: Load factory types from configuration and register them dynamically
+	// This would involve reading config to know which factories to register
+	// and then instantiating them without direct imports in the core
+
+	return nil
+}
+
 // loadAndRegisterModels loads and registers models from configuration
 func (pf *PonchoFrameworkImpl) loadAndRegisterModels(ctx context.Context) error {
 	if pf.configManager == nil {
@@ -635,15 +694,15 @@ func (pf *PonchoFrameworkImpl) GetConfigManager() config.ConfigManager {
 }
 
 // GetModelFactoryManager returns the model factory manager
-func (pf *PonchoFrameworkImpl) GetModelFactoryManager() *config.ModelFactoryManager {
-	if pf.configManager == nil {
+func (pf *PonchoFrameworkImpl) GetModelFactoryManager() interfaces.ModelFactoryManager {
+	if pf.serviceLocator == nil {
 		return nil
 	}
 
-	// Type assertion to access internal methods
-	if cm, ok := pf.configManager.(*config.ConfigManagerImpl); ok {
-		return cm.GetModelFactoryManager()
-	}
+	return pf.serviceLocator.GetModelFactoryManager()
+}
 
-	return nil
+// GetServiceLocator returns the service locator
+func (pf *PonchoFrameworkImpl) GetServiceLocator() ServiceLocator {
+	return pf.serviceLocator
 }

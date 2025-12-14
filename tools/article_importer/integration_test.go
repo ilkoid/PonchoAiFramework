@@ -10,9 +10,19 @@ import (
 )
 
 // extractS3ConfigForTest is a helper function to access the private extractS3Config method
-func extractS3ConfigForTest(tool *article_importer.ArticleImporterTool, config map[string]interface{}) *s3.S3ClientConfig {
+func extractS3ConfigForTest(tool *article_importer.ArticleImporterTool, config map[string]interface{}) *s3.ClientConfig {
 	// Since extractS3Config is private, we'll create the config manually
-	s3Config := s3.DefaultS3ClientConfig()
+	s3Config := &s3.ClientConfig{
+		URL:        "https://storage.yandexcloud.net",
+		Region:     "ru-central1",
+		Bucket:     "plm-ai",
+		Endpoint:   "storage.yandexcloud.net",
+		UseSSL:     true,
+		AccessKey:  "",
+		SecretKey:  "",
+		Timeout:    30,
+		MaxRetries: 3,
+	}
 
 	// Extract from global S3 config first (this matches real implementation order)
 	if s3ConfigMap, ok := config["s3"].(map[string]interface{}); ok {
@@ -68,7 +78,17 @@ func TestArticleImporterTool_Integration(t *testing.T) {
 	tool := article_importer.NewArticleImporterTool()
 
 	// Create a real S3 client config (using defaults)
-	s3Config := s3.DefaultS3ClientConfig()
+	s3Config := &s3.ClientConfig{
+		URL:        "https://storage.yandexcloud.net",
+		Region:     "ru-central1",
+		Bucket:     "plm-ai",
+		Endpoint:   "storage.yandexcloud.net",
+		UseSSL:     true,
+		AccessKey:  "",
+		SecretKey:  "",
+		Timeout:    30,
+		MaxRetries: 3,
+	}
 
 	// Initialize tool with S3 config
 	config := map[string]interface{}{
