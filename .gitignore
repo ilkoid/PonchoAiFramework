@@ -91,3 +91,76 @@ sample/poncho-tools/cmd/*/*
 
 # Test results
 test-results/
+
+# Documentation (exclude from version control)
+docs/
+*.md
+!CLAUDE.md
+!README.md
+
+# Configuration files (sensitive)
+config*.yaml
+config*.yml
+*.config.yaml
+*.config.yml
+**/config.yaml
+**/config.yml
+config-production.yaml
+docker-compose.production.yml
+
+# Claude Code settings
+.claude/
+.claude/settings.local.json
+
+# MCP configuration
+mcp.json
+
+# Output and data directories
+output/
+s3-extract/
+**/extract/
+
+# Temporary conversation and notes files
+conversation-*.txt
+*.notes.md
+intermidiate-*.md
+*S3_MIGRATION_*.md
+*ARCHITECTURE_*.md
+*_SUMMARY.md
+daily-plan.md
+test-*.md
+
+# Audit reports (temporary)
+*-audit-report.md
+WORKER_POOL_*.md
+
+# Example configuration files with sensitive data
+configs/*.yaml
+configs/*.yml
+cache-demo-config.yaml
+
+# S3 and data files
+**/*.json
+!go.mod
+!go.sum
+!package.json
+!tsconfig.json
+!**/test-data/**/*.json
+
+# Local development tools and scripts
+*-demo
+build-*.sh
+test-*.sh
+list_articles
+article-processor
+s3-explorer
+s3_tool_factory
+cache-demo
+prompt-tester
+integration-tester
+simple-test
+
+# Exclude specific test binaries but keep source
+**/test
+**/test-*/
+**/*-test
